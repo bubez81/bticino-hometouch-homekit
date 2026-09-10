@@ -11,6 +11,7 @@ config.json
 *.jpg
 *.jpeg
 *.png
+!assets/project-banner.png
 snapshots/
 logs/
 runtime/

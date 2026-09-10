@@ -1,4 +1,11 @@
+![BTicino HOMETOUCH HomeKit bridge — privacy-first local intercom integration](assets/project-banner.png)
+
 # BTicino HOMETOUCH HomeKit bridge
+
+[![Tests](https://github.com/bubez81/bticino-hometouch-homekit/actions/workflows/tests.yml/badge.svg)](https://github.com/bubez81/bticino-hometouch-homekit/actions/workflows/tests.yml)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#what-works-today)
 
 Experimental, firmware-free integration of a BTicino HOMETOUCH video door
 entry system with HomeKit through Homebridge.
