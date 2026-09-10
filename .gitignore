@@ -1,0 +1,37 @@
+# Private runtime data
+config.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.sip
+*.sdp
+*.pcap
+*.pcapng
+*.jpg
+*.jpeg
+*.png
+snapshots/
+logs/
+runtime/
+
+# Reverse-engineering inputs are never distributed
+work/apk-dex/
+*.apk
+*.dex
+
+# Python/macOS
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+.analysis-venv/
+androguard.db
+androguard.log
+
+# Local tooling
+.env
+.env.*
+!.env.example
+outputs/
+onboarding-output/

@@ -1,0 +1,14 @@
+{
+  "base_dir": "/opt/bticino-sniffer",
+  "ffmpeg": "/usr/bin/ffmpeg",
+  "openssl": "/usr/bin/openssl",
+  "sip_server": "192.0.2.10",
+  "sip_port": 5061,
+  "sip_domain": "example.invalid",
+  "credentials_file": "/path/to/sip_credentials.json",
+  "certificate_file": "/path/to/client.cert.pem",
+  "private_key_file": "/path/to/client.key",
+  "ca_file": "/path/to/ca-chain.cert.pem",
+  "homekit_doorbell_name": "Videocitofono",
+  "save_raw_sip": false
+}
