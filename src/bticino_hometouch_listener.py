@@ -56,6 +56,9 @@ DOMAIN = CONFIG.get("sip_domain") or os.environ.get("BTICINO_SIP_DOMAIN", "")
 
 REGISTER_EXPIRES = 600
 REFRESH_MARGIN = 90
+RECONNECT_INITIAL_DELAY = float(CONFIG.get("reconnect_initial_delay", 0.25))
+RECONNECT_MAX_DELAY = float(CONFIG.get("reconnect_max_delay", 10.0))
+RECONNECT_STABLE_AFTER = float(CONFIG.get("reconnect_stable_after", 30.0))
 
 USER_AGENT = "HOMETOUCH-Diagnostic-Listener/1.0"
 MEDIA_TIMEOUT = 30
@@ -75,6 +78,15 @@ SAVE_RAW_SIP = bool(CONFIG.get("save_raw_sip", False))
 RUNNING = True
 PENDING_CALLS = set()
 PENDING_LOCK = threading.Lock()
+
+
+def next_reconnect_delay(previous_delay, connected_for):
+    """Return a short delay after stable sessions and back off rapid failures."""
+    initial = max(0.0, RECONNECT_INITIAL_DELAY)
+    maximum = max(initial, RECONNECT_MAX_DELAY)
+    if connected_for >= max(0.0, RECONNECT_STABLE_AFTER):
+        return initial
+    return min(maximum, max(initial, previous_delay * 2))
 
 
 # ------------------------------------------------------------
@@ -1462,24 +1474,31 @@ def main():
     log(f"Pool RTP/RTCP: UDP {MEDIA_PORT_START}-{MEDIA_PORT_END}")
     log("=" * 70)
 
+    reconnect_delay = max(0.0, RECONNECT_INITIAL_DELAY)
+
     while RUNNING:
 
         client = HomtouchListener()
+        connected_at = time.monotonic()
+        delay = reconnect_delay
 
         try:
             client.loop()
 
         except Exception as e:
+            connected_for = time.monotonic() - connected_at
             log(
                 f"Connessione/listener interrotto: "
                 f"{type(e).__name__}: {e}"
             )
-            delay = 10
+            delay = next_reconnect_delay(reconnect_delay, connected_for)
+            reconnect_delay = delay
 
         finally:
             client.close()
 
         if RUNNING:
+            log(f"Riconnessione SIP fra {delay:.2f}s")
             time.sleep(delay)
 
     snapshot_server.shutdown()
