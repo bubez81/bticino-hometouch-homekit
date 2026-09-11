@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#what-works-today)
 [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/bubez81)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-support-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/bubez81)
 
 Experimental, firmware-free integration of a BTicino HOMETOUCH video door
 entry system with HomeKit through Homebridge.
@@ -19,6 +20,14 @@ forwards live video to Homebridge on the local loopback interface.
 > **Project status: experimental.** Incoming video works on the tested system.
 > On-demand activation, two-way audio, reliable entrance identification and
 > opening controls are still under development.
+
+## Support the project
+
+If this project is useful to you, you can support its continued development,
+testing and documentation through
+[GitHub Sponsors](https://github.com/sponsors/bubez81) or
+[Buy Me a Coffee](https://buymeacoffee.com/bubez81). Contributions are
+optional and do not include rewards or support services.
 
 ## What works today
 
