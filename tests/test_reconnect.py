@@ -11,6 +11,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ReconnectDelayTests(unittest.TestCase):
+    def test_common_homebrew_executable_is_found_with_restricted_path(self):
+        with patch.object(MODULE, "CONFIG", {}), \
+             patch.object(MODULE.shutil, "which", return_value=None), \
+             patch.object(MODULE.Path, "is_file", return_value=True), \
+             patch.object(MODULE.os, "access", return_value=True):
+            self.assertEqual(
+                MODULE.resolve_executable(
+                    "ffmpeg", "TEST_UNUSED_FFMPEG", "ffmpeg",
+                    ("/opt/homebrew/bin/ffmpeg",),
+                ),
+                "/opt/homebrew/bin/ffmpeg",
+            )
+
     def test_stable_connection_recovers_almost_immediately(self):
         with patch.object(MODULE, "RECONNECT_INITIAL_DELAY", 0.25), \
              patch.object(MODULE, "RECONNECT_MAX_DELAY", 10.0), \

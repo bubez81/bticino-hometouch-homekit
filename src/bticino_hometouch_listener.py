@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import select
+import shutil
 import signal
 import socket
 import ssl
@@ -34,6 +35,19 @@ def load_public_config():
 
 CONFIG = load_public_config()
 
+
+def resolve_executable(config_key, environment_key, command, candidates):
+    configured = CONFIG.get(config_key) or os.environ.get(environment_key)
+    if configured:
+        return configured
+    discovered = shutil.which(command)
+    if discovered:
+        return discovered
+    for candidate in candidates:
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return command
+
 # ============================================================
 # HOMETOUCH SIP passive diagnostic listener
 # ============================================================
@@ -42,8 +56,14 @@ BASE = Path(CONFIG.get("base_dir", "/opt/bticino-sniffer"))
 LOGDIR = BASE / "logs"
 SNAPSHOT_DIR = BASE / "snapshots"
 RUNTIME_DIR = BASE / "runtime"
-FFMPEG = CONFIG.get("ffmpeg", os.environ.get("BTICINO_FFMPEG", "ffmpeg"))
-OPENSSL = CONFIG.get("openssl", os.environ.get("BTICINO_OPENSSL", "openssl"))
+FFMPEG = resolve_executable(
+    "ffmpeg", "BTICINO_FFMPEG", "ffmpeg",
+    ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"),
+)
+OPENSSL = resolve_executable(
+    "openssl", "BTICINO_OPENSSL", "openssl",
+    ("/opt/homebrew/bin/openssl", "/usr/local/bin/openssl", "/usr/bin/openssl"),
+)
 
 CREDS_FILE = Path(CONFIG.get("credentials_file", "/opt/bticino-gateway/config/sip_credentials.json"))
 CERT_FILE = Path(CONFIG.get("certificate_file", "/opt/bticino-gateway/certs/client.cert.pem"))
