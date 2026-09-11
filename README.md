@@ -181,6 +181,24 @@ python3 ./scripts/configure_homebridge.py --apply
 sudo launchctl kickstart -k system/com.homebridge.server
 ```
 
+On first installation, `BTICINO_CONFIG` is mandatory. On later updates it may
+be omitted: the installer preserves the private configuration already stored
+at `/opt/bticino-sniffer/config.json`. Before accepting an installation it now
+validates the JSON and referenced private files, confirms that FFmpeg and
+OpenSSL are executable, starts the service and waits for a successful SIP
+registration. If any check fails, the previous listener, configuration and
+LaunchDaemon are restored automatically.
+
+To update an existing installation from a fresh repository checkout:
+
+```sh
+sudo ./scripts/install.sh
+```
+
+Success is reported as `HEALTHCHECK_OK=TLS/SIP registration`. The installer
+does not print credentials, certificate contents, SIP account identifiers or
+the private configuration.
+
 The included installer is specifically a macOS `launchd` helper. It backs up
 an existing listener and LaunchDaemon before replacing them. Set
 `BTICINO_PYTHON` and `BTICINO_FFMPEG` when those programs are installed in

@@ -109,6 +109,19 @@ def next_reconnect_delay(previous_delay, connected_for):
     return min(maximum, max(initial, previous_delay * 2))
 
 
+def validate_runtime_settings():
+    """Reject incomplete configuration before entering the reconnect loop."""
+    missing = []
+    if not SERVER_IP:
+        missing.append("sip_server")
+    if not DOMAIN:
+        missing.append("sip_domain")
+    if missing:
+        raise RuntimeError(
+            "configurazione SIP incompleta: " + ", ".join(missing)
+        )
+
+
 # ------------------------------------------------------------
 # utilities
 # ------------------------------------------------------------
@@ -1466,6 +1479,7 @@ signal.signal(
 
 
 def main():
+    validate_runtime_settings()
     BASE.mkdir(
         parents=True,
         exist_ok=True

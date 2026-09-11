@@ -11,6 +11,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ReconnectDelayTests(unittest.TestCase):
+    def test_missing_sip_target_fails_before_reconnect_loop(self):
+        with patch.object(MODULE, "SERVER_IP", ""), \
+             patch.object(MODULE, "DOMAIN", ""):
+            with self.assertRaisesRegex(
+                RuntimeError, "sip_server, sip_domain"
+            ):
+                MODULE.validate_runtime_settings()
+
+    def test_complete_sip_target_is_accepted(self):
+        with patch.object(MODULE, "SERVER_IP", "198.51.100.10"), \
+             patch.object(MODULE, "DOMAIN", "sip.example.test"):
+            MODULE.validate_runtime_settings()
+
     def test_common_homebrew_executable_is_found_with_restricted_path(self):
         with patch.object(MODULE, "CONFIG", {}), \
              patch.object(MODULE.shutil, "which", return_value=None), \
