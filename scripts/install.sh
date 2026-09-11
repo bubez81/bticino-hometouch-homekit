@@ -64,9 +64,11 @@ fi
 had_listener=false
 had_config=false
 had_plist=false
+was_loaded=false
 test -f "$backup/listener.py" && had_listener=true
 test -f "$backup/config.json" && had_config=true
 test -f "$backup/$service_label.plist" && had_plist=true
+launchctl print "system/$service_label" >/dev/null 2>&1 && was_loaded=true
 
 rollback() {
     status=$?
@@ -87,10 +89,10 @@ rollback() {
         elif test "$had_plist" = false; then
             rm -f "$plist"
         fi
-        if launchctl print system/$service_label >/dev/null 2>&1; then
-            launchctl kickstart -k system/$service_label || true
+        if test "$was_loaded" = true; then
+            launchctl kickstart -k "system/$service_label" || true
         else
-            launchctl bootstrap system "$plist" || true
+            launchctl bootout "system/$service_label" >/dev/null 2>&1 || true
         fi
     fi
     exit "$status"
@@ -123,7 +125,6 @@ fi
 attempt=0
 registered=false
 while test "$attempt" -lt 15; do
-    launchctl print system/$service_label | grep -q 'state = running'
     if test -f "$base/listener.log" && \
        sed -n "$((log_lines + 1)),\$p" "$base/listener.log" | \
        grep -q 'REGISTRAZIONE SIP OK'; then
@@ -138,6 +139,7 @@ if test "$registered" != true; then
     test -f "$base/listener.log" && tail -40 "$base/listener.log" >&2
     false
 fi
+launchctl print "system/$service_label" | grep -q 'state = running'
 
 trap - EXIT HUP INT TERM
 echo "BACKUP=$backup"

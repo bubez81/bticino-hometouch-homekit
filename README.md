@@ -199,6 +199,23 @@ Success is reported as `HEALTHCHECK_OK=TLS/SIP registration`. The installer
 does not print credentials, certificate contents, SIP account identifiers or
 the private configuration.
 
+### Migrating an older macOS service
+
+Installations made during early development may still run under a private or
+legacy LaunchDaemon label. Do not start the public service alongside it: two
+listeners must not share the same SIP endpoint and media ports. The migration
+helper stops the legacy service, invokes the verified installer and archives
+the old plist only after the new service has registered successfully:
+
+```sh
+sudo ./scripts/migrate_macos_service.sh
+```
+
+The known early label is detected by default. For another explicitly verified
+label, set `BTICINO_LEGACY_LABEL`. On failure the helper removes the incomplete
+new service and reactivates the legacy one. The old plist is retained inside
+the private `/opt/bticino-sniffer/backups/` directory rather than deleted.
+
 The included installer is specifically a macOS `launchd` helper. It backs up
 an existing listener and LaunchDaemon before replacing them. Set
 `BTICINO_PYTHON` and `BTICINO_FFMPEG` when those programs are installed in
