@@ -70,6 +70,23 @@ def validate(path):
 
     resolve_executable(data.get("ffmpeg"), "ffmpeg")
     resolve_executable(data.get("openssl"), "openssl")
+    classification = data.get("entrance_classification", {})
+    if classification and not isinstance(classification, dict):
+        raise ValueError("entrance_classification deve essere un oggetto")
+    if classification.get("enabled", False):
+        profiles = classification.get("profiles")
+        if not isinstance(profiles, dict) or len(profiles) < 2:
+            raise ValueError("servono almeno due profili visivi degli ingressi")
+        for name, images in profiles.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("nome profilo ingresso non valido")
+            if isinstance(images, str):
+                images = [images]
+            if not isinstance(images, list) or not images:
+                raise ValueError(f"profilo ingresso privo di immagini: {name}")
+            if any(not isinstance(image, str) or not Path(image).expanduser().is_file()
+                   for image in images):
+                raise ValueError(f"immagine privata non trovata per il profilo: {name}")
     return data
 
 

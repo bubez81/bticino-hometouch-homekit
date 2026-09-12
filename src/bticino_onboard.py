@@ -65,6 +65,42 @@ def payload_json(raw: bytes) -> Any:
     return value
 
 
+def records_with_identifier(value: Any, identifier: str) -> list[dict[str, Any]]:
+    """Find API records across legacy response wrappers without logging values."""
+    found: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            if identifier in item and id(item) not in seen:
+                seen.add(id(item))
+                found.append(item)
+                return
+            for nested in item.values():
+                visit(nested)
+        elif isinstance(item, list):
+            for nested in item:
+                visit(nested)
+
+    visit(value)
+    return found
+
+
+def payload_shape(value: Any) -> str:
+    """Return privacy-safe response structure for public diagnostics."""
+    if isinstance(value, list):
+        return f"lista({len(value)})"
+    if isinstance(value, dict):
+        child_lists = sorted(
+            len(item) for item in value.values() if isinstance(item, list)
+        )
+        suffix = f", liste={child_lists}" if child_lists else ""
+        return f"oggetto({len(value)} campi{suffix})"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
+
 @dataclass
 class CloudResponse:
     body: bytes
@@ -82,6 +118,7 @@ class EliotClient:
         self.portal = portal.rstrip("/")
         self.timeout = timeout
         self.auth_token = ""
+        self.last_plants_payload: Any = None
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPSHandler(context=ssl.create_default_context())
         )
@@ -145,9 +182,18 @@ class EliotClient:
 
     def plants(self) -> list[dict[str, Any]]:
         value = self.request("GET", "/eliot/plants").json()
-        if not isinstance(value, list):
-            raise OnboardingError("Elenco impianti in formato inatteso")
-        return [item for item in value if isinstance(item, dict)]
+        self.last_plants_payload = value
+        plants = records_with_identifier(value, "PlantId")
+        if plants:
+            return plants
+        if isinstance(value, list):
+            return []
+        if isinstance(value, dict):
+            return []
+        raise OnboardingError("Elenco impianti in formato inatteso")
+
+    def invitations(self) -> Any:
+        return self.request("GET", "/eliot/invitations").json()
 
     def gateways(self, plant_id: str) -> list[dict[str, Any]]:
         path = "/eliot/plants/{}/gateway/".format(
@@ -348,6 +394,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="mostra nomi e identificativi mascherati degli endpoint SIP")
     parser.add_argument("--probe-removal", type=int, metavar="NUMERO",
                         help="verifica in sola lettura il supporto alla rimozione dell’endpoint")
+    parser.add_argument(
+        "--diagnose-discovery", action="store_true",
+        help="mostra solo la forma delle risposte impianti/inviti, senza valori",
+    )
     return parser
 
 
@@ -367,8 +417,23 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Sessione ottenuta: {redact(client.auth_token)}")
 
     plants = client.plants()
+    if args.diagnose_discovery:
+        invitations = client.invitations()
+        invitation_plants = records_with_identifier(invitations, "PlantId")
+        print(
+            "Diagnosi discovery (nessun valore mostrato): "
+            f"impianti={payload_shape(client.last_plants_payload)}, "
+            f"record={len(plants)}; "
+            f"inviti={payload_shape(invitations)}, "
+            f"record-impianto={len(invitation_plants)}"
+        )
     if not plants:
-        raise OnboardingError("Nessun impianto visibile: verificare l’invito")
+        suffix = (
+            "; incollare soltanto la riga “Diagnosi discovery” nel bug report"
+            if args.diagnose_discovery else
+            "; riprovare con --diagnose-discovery"
+        )
+        raise OnboardingError("Nessun impianto visibile" + suffix)
     plant = choose_plant(plants, args.plant_id)
     plant_id = validate_identifier(plant.get("PlantId"), "PlantId")
     gateway_id = discover_gateway_id(client, plant, plant_id)

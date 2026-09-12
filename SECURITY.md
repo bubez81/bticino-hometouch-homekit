@@ -19,6 +19,16 @@ every push.
 Raw SIP persistence is disabled by default. Enable `save_raw_sip` only for
 short, controlled diagnostics and remove the resulting files afterwards.
 
+Entrance diagnostics use an installation-local HMAC key stored with mode 600.
+Logs contain only short keyed fingerprints of selected SIP/SDP metadata, so
+calls can be compared without recording the original identifiers. The key and
+the fingerprints are still private runtime data and must not be committed.
+
+Visual entrance profiles are installation-specific images and must remain in
+the private service directory with mode 600. They are never part of the source
+tree. Classification runs locally and temporary reduced frames are deleted at
+the end of each media session.
+
 ## Reporting vulnerabilities
 
 Do not open a public issue containing secrets, captures or household details.

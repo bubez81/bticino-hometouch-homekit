@@ -13,5 +13,16 @@
   "private_key_file": "/path/to/client.key",
   "ca_file": "/path/to/ca-chain.cert.pem",
   "homekit_doorbell_name": "Videocitofono",
+  "post_call_fallback_seconds": -1,
+  "entrance_classification": {
+    "enabled": false,
+    "frame_index": 2,
+    "max_distance": 0.35,
+    "min_margin": 0.08,
+    "profiles": {
+      "external": ["/opt/bticino-sniffer/private/entrances/external.jpg"],
+      "stairs": ["/opt/bticino-sniffer/private/entrances/stairs.jpg"]
+    }
+  },
   "save_raw_sip": false
 }

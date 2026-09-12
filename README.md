@@ -230,6 +230,7 @@ HOMETOUCH -- SIP/TLS --> listener
 HOMETOUCH -- H.264/SRTP --> listener/FFmpeg
 listener -- MPEG-TS/UDP loopback --> Homebridge
 listener -- JPEG/HTTP loopback --> Homebridge
+listener -- continuous latest-snapshot video fallback --> Homebridge
 Homebridge -- HomeKit Secure RTP --> Apple Home
 ```
 
@@ -239,7 +240,10 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
 - Replace the prototype scripts with a packaged service and guided installer
 - Verify dedicated-account provisioning end-to-end on additional installations
 - Identify multiple entrance panels without relying on random RTP SSRC values
+- Validate privacy-preserving local visual entrance classification before using
+  it to select an entrance-specific HomeKit event
 - Add on-demand video activation
+- Validate the continuous latest-snapshot fallback across additional HomeKit clients
 - Add receive-only audio, followed by carefully tested two-way audio
 - Associate the correct opening control with each entrance where HomeKit allows
 

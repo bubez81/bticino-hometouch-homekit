@@ -18,6 +18,8 @@ from src.bticino_onboard import (
     discover_gateway_id,
     endpoint_summary,
     payload_json,
+    payload_shape,
+    records_with_identifier,
     split_sip_records,
     validate_identifier,
     main,
@@ -129,6 +131,17 @@ class OnboardTests(unittest.TestCase):
         self.assertEqual(payload_json(b'[{"PlantId":"7"}]')[0]["PlantId"], "7")
         wrapped = json.dumps({"payload": '[{"PlantId":"8"}]'}).encode()
         self.assertEqual(payload_json(wrapped)[0]["PlantId"], "8")
+
+    def test_plant_records_are_found_in_legacy_wrappers(self):
+        wrapped = {"result": {"Plants": [{"PlantId": "8", "PlantName": "Home"}]}}
+        self.assertEqual(records_with_identifier(wrapped, "PlantId")[0]["PlantId"], "8")
+
+    def test_payload_shape_never_exposes_values_or_keys(self):
+        value = {"private@example.invalid": [{"PlantId": "secret-plant"}]}
+        summary = payload_shape(value)
+        self.assertEqual(summary, "oggetto(1 campi, liste=[1])")
+        self.assertNotIn("private", summary)
+        self.assertNotIn("secret", summary)
 
     def test_identifier_validation(self):
         self.assertEqual(validate_identifier("abc", "id"), "abc")

@@ -56,6 +56,7 @@ BASE = Path(CONFIG.get("base_dir", "/opt/bticino-sniffer"))
 LOGDIR = BASE / "logs"
 SNAPSHOT_DIR = BASE / "snapshots"
 RUNTIME_DIR = BASE / "runtime"
+DIAGNOSTIC_KEY_FILE = RUNTIME_DIR / "diagnostic-hmac.key"
 FFMPEG = resolve_executable(
     "ffmpeg", "BTICINO_FFMPEG", "ffmpeg",
     ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"),
@@ -94,10 +95,180 @@ HOMEBRIDGE_HTTP_PORT = 8767
 HOMEBRIDGE_DOORBELL_NAME = CONFIG.get("homekit_doorbell_name", "Videocitofono")
 PLACEHOLDER_SNAPSHOT = RUNTIME_DIR / "snapshot-pending.jpg"
 SAVE_RAW_SIP = bool(CONFIG.get("save_raw_sip", False))
+POST_CALL_FALLBACK_SECONDS = int(CONFIG.get("post_call_fallback_seconds", -1))
+ENTRANCE_CLASSIFICATION = CONFIG.get("entrance_classification", {})
+ENTRANCE_CLASSIFICATION_ENABLED = bool(ENTRANCE_CLASSIFICATION.get("enabled", False))
+ENTRANCE_CLASSIFICATION_FRAME = max(0, int(ENTRANCE_CLASSIFICATION.get("frame_index", 2)))
+ENTRANCE_CLASSIFICATION_THRESHOLD = float(ENTRANCE_CLASSIFICATION.get("max_distance", 0.35))
+ENTRANCE_CLASSIFICATION_MARGIN = float(ENTRANCE_CLASSIFICATION.get("min_margin", 0.08))
+ENTRANCE_SIGNATURE_WIDTH = 32
+ENTRANCE_SIGNATURE_HEIGHT = 24
+ENTRANCE_SIGNATURE_SIZE = ENTRANCE_SIGNATURE_WIDTH * ENTRANCE_SIGNATURE_HEIGHT
 
 RUNNING = True
 PENDING_CALLS = set()
 PENDING_LOCK = threading.Lock()
+DIAGNOSTIC_KEY = None
+DIAGNOSTIC_KEY_LOCK = threading.Lock()
+ENTRANCE_PROFILES = {}
+FALLBACK_PROCESS = None
+FALLBACK_LOCK = threading.Lock()
+
+
+def normalized_luma_signature(data):
+    """Return a contrast-normalized vector from a small grayscale frame."""
+    if len(data) != ENTRANCE_SIGNATURE_SIZE:
+        raise ValueError(f"frame diagnostico incompleto: {len(data)} byte, attesi {ENTRANCE_SIGNATURE_SIZE}")
+    values = [float(value) for value in data]
+    mean = sum(values) / len(values)
+    centered = [value - mean for value in values]
+    norm = sum(value * value for value in centered) ** 0.5
+    if norm <= 1e-9:
+        raise ValueError("frame diagnostico privo di contrasto")
+    return tuple(value / norm for value in centered)
+
+
+def gradient_signature(data):
+    """Describe fixed scene geometry while suppressing global light changes."""
+    if len(data) != ENTRANCE_SIGNATURE_SIZE:
+        raise ValueError(
+            f"frame diagnostico incompleto: {len(data)} byte, "
+            f"attesi {ENTRANCE_SIGNATURE_SIZE}"
+        )
+    horizontal = []
+    vertical = []
+    width = ENTRANCE_SIGNATURE_WIDTH
+    height = ENTRANCE_SIGNATURE_HEIGHT
+    for y in range(height - 1):
+        for x in range(width - 1):
+            offset = y * width + x
+            horizontal.append(float(data[offset + 1]) - data[offset])
+            vertical.append(float(data[offset + width]) - data[offset])
+    values = horizontal + vertical
+    norm = sum(value * value for value in values) ** 0.5
+    if norm <= 1e-9:
+        raise ValueError("frame diagnostico privo di bordi")
+    return tuple(value / norm for value in values)
+
+
+def signature_distance(left, right):
+    """Cosine distance for already normalized signatures."""
+    if len(left) != len(right) or not left:
+        raise ValueError("impronte visive incompatibili")
+    similarity = sum(a * b for a, b in zip(left, right))
+    return max(0.0, min(2.0, 1.0 - similarity))
+
+
+def classify_entrance(signature, profiles, max_distance=0.35, min_margin=0.08):
+    """Classify a frame, rejecting weak or ambiguous matches."""
+    scores = []
+    for name, references in profiles.items():
+        if references:
+            scores.append((min(signature_distance(signature, ref) for ref in references), name))
+    scores.sort()
+    if not scores:
+        return None, None, "no-profiles"
+    best_distance, best_name = scores[0]
+    if best_distance > max_distance:
+        return None, best_distance, "distance"
+    if len(scores) > 1 and scores[1][0] - best_distance < min_margin:
+        return None, best_distance, "ambiguous"
+    return best_name, best_distance, "matched"
+
+
+def image_signature(path):
+    """Decode a reference image locally without adding image dependencies."""
+    result = subprocess.run([
+        FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin", "-i", str(path),
+        "-vf", f"scale={ENTRANCE_SIGNATURE_WIDTH}:{ENTRANCE_SIGNATURE_HEIGHT}:flags=area,format=gray",
+        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-",
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace")[-500:].strip()
+        raise RuntimeError(detail or "FFmpeg non ha decodificato l'immagine")
+    return gradient_signature(result.stdout)
+
+
+def load_entrance_profiles():
+    """Load installation-private reference images named in config.json."""
+    profiles = {}
+    configured = ENTRANCE_CLASSIFICATION.get("profiles", {})
+    if not isinstance(configured, dict):
+        raise RuntimeError("entrance_classification.profiles deve essere un oggetto")
+    for name, paths in configured.items():
+        if not isinstance(name, str) or not name.strip():
+            raise RuntimeError("nome profilo ingresso non valido")
+        if isinstance(paths, str):
+            paths = [paths]
+        if not isinstance(paths, list) or not paths:
+            raise RuntimeError(f"profilo {name!r} privo di immagini")
+        profiles[name] = [image_signature(Path(path).expanduser()) for path in paths]
+    return profiles
+
+
+def post_call_fallback_command(snapshot, duration=None):
+    """Build a low-bandwidth, periodically keyed still-video fallback."""
+    seconds = POST_CALL_FALLBACK_SECONDS if duration is None else int(duration)
+    command = [
+        FFMPEG, "-hide_banner", "-loglevel", "warning", "-nostdin",
+        "-re", "-loop", "1", "-framerate", "2", "-i", str(snapshot),
+        "-an", "-c:v", "libx264", "-preset", "ultrafast",
+        "-tune", "stillimage,zerolatency", "-pix_fmt", "yuv420p",
+        "-r", "2", "-g", "4", "-keyint_min", "4", "-sc_threshold", "0",
+        "-b:v", "120k", "-maxrate", "180k", "-bufsize", "240k",
+    ]
+    if seconds > 0:
+        command.extend(["-t", str(seconds)])
+    command.extend([
+        "-mpegts_flags", "+resend_headers",
+        "-f", "mpegts", f"udp://{LIVE_VIDEO_HOST}:{LIVE_VIDEO_PORT}?pkt_size=1316",
+    ])
+    return command
+
+
+def stop_post_call_fallback(reason=None):
+    global FALLBACK_PROCESS
+    with FALLBACK_LOCK:
+        process = FALLBACK_PROCESS
+        FALLBACK_PROCESS = None
+        if not process or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=1)
+    if reason:
+        log(f"POST-CALL FALLBACK: arrestato ({reason})")
+
+
+def start_post_call_fallback(snapshot):
+    """Serve the latest private snapshot briefly when live early media ends."""
+    global FALLBACK_PROCESS
+    if POST_CALL_FALLBACK_SECONDS == 0 or not snapshot or not Path(snapshot).is_file():
+        return
+    stop_post_call_fallback()
+    command = post_call_fallback_command(snapshot)
+    with FALLBACK_LOCK:
+        FALLBACK_PROCESS = subprocess.Popen(
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    lifetime = (
+        "continuo" if POST_CALL_FALLBACK_SECONDS < 0
+        else f"per {POST_CALL_FALLBACK_SECONDS}s"
+    )
+    log(f"POST-CALL FALLBACK: attivo ({lifetime})")
+
+
+def classify_entrance_image(path):
+    signature = image_signature(path)
+    return classify_entrance(
+        signature, ENTRANCE_PROFILES,
+        ENTRANCE_CLASSIFICATION_THRESHOLD,
+        ENTRANCE_CLASSIFICATION_MARGIN,
+    )
 
 
 def next_reconnect_delay(previous_delay, connected_for):
@@ -120,6 +291,86 @@ def validate_runtime_settings():
         raise RuntimeError(
             "configurazione SIP incompleta: " + ", ".join(missing)
         )
+
+
+def diagnostic_key():
+    """Return a private, installation-local key for stable log fingerprints."""
+    global DIAGNOSTIC_KEY
+    with DIAGNOSTIC_KEY_LOCK:
+        if DIAGNOSTIC_KEY is not None:
+            return DIAGNOSTIC_KEY
+        try:
+            DIAGNOSTIC_KEY = DIAGNOSTIC_KEY_FILE.read_bytes()
+        except FileNotFoundError:
+            key = secrets.token_bytes(32)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            try:
+                descriptor = os.open(DIAGNOSTIC_KEY_FILE, flags, 0o600)
+            except FileExistsError:
+                DIAGNOSTIC_KEY = DIAGNOSTIC_KEY_FILE.read_bytes()
+            else:
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(key)
+                DIAGNOSTIC_KEY = key
+        if len(DIAGNOSTIC_KEY) < 16:
+            raise RuntimeError("chiave diagnostica locale non valida")
+        return DIAGNOSTIC_KEY
+
+
+def privacy_token(value, key=None):
+    if value is None or not str(value).strip():
+        return "-"
+    digest = hmac.new(
+        key or diagnostic_key(), str(value).strip().encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return digest[:12]
+
+
+def sip_uri(value):
+    match = re.search(r"(?i)sips?:([^>;,\s]+)", value or "")
+    return match.group(1) if match else ""
+
+
+def entrance_fingerprints(raw, key=None):
+    """Extract comparable call metadata while returning only keyed hashes."""
+    headers, _ = sip_headers(raw)
+    body = sip_body(raw)
+    first = sip_first_line(raw).split()
+    request_uri = first[1] if len(first) > 1 else ""
+    lines = body.replace("\r", "").split("\n")
+    origin = next((line[2:].split() for line in lines if line.startswith("o=")), [])
+    connections = sorted({
+        line.split()[-1] for line in lines
+        if line.startswith("c=") and line.split()
+    })
+    session_name = next((line[2:] for line in lines if line.startswith("s=")), "")
+    whole = raw.decode("utf-8", errors="replace")
+    devaddr = sorted(set(re.findall(
+        r"(?im)DEVADDR\s*[:=]\s*([^;\s\r\n]+)", whole
+    )))
+    selected_headers = {}
+    for name, value in headers.items():
+        if name.startswith(("x-", "p-")) or name in {
+            "alert-info", "diversion", "remote-party-id", "subject"
+        }:
+            selected_headers[name] = privacy_token(value, key)
+    return {
+        "request": privacy_token(request_uri, key),
+        "from": privacy_token(sip_uri(headers.get("from", "")), key),
+        "contact": privacy_token(sip_uri(headers.get("contact", "")), key),
+        "user_agent": privacy_token(headers.get("user-agent", ""), key),
+        "devaddr": [privacy_token(value, key) for value in devaddr],
+        "origin_user": privacy_token(origin[0] if origin else "", key),
+        "origin_address": privacy_token(origin[-1] if len(origin) >= 6 else "", key),
+        "connections": [privacy_token(value, key) for value in connections],
+        "session": privacy_token(session_name, key),
+        "headers": selected_headers,
+    }
+
+
+def call_reference(call_id):
+    return privacy_token(call_id)
 
 
 # ------------------------------------------------------------
@@ -562,11 +813,13 @@ class EarlyMediaCapture:
         self.pli_sent = False
         self.feedback_ssrc = secrets.randbits(32) or 1
         self.snapshot_reported = False
+        self.classification_reported = False
         self.started = time.time()
         self.snapshot = SNAPSHOT_DIR / (
             f"{stamp()}_{re.sub(r'[^A-Za-z0-9_.-]', '_', call_id)[:60]}.jpg"
         )
         self.sdp_path = RUNTIME_DIR / f"media-{uuid.uuid4().hex}.sdp"
+        self.classification_path = RUNTIME_DIR / f"entrance-{uuid.uuid4().hex}.jpg"
 
     @property
     def answer_sdp(self):
@@ -613,6 +866,7 @@ class EarlyMediaCapture:
         )
 
     def start(self):
+        stop_post_call_fallback("nuova chiamata")
         if self.audio:
             for port in (self.audio["local_port"], self.audio["local_port"] + 1):
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -667,6 +921,17 @@ class EarlyMediaCapture:
             "-frames:v", "1", "-q:v", "2", "-y",
             str(self.snapshot),
         ]
+        if ENTRANCE_CLASSIFICATION_ENABLED and ENTRANCE_PROFILES:
+            cmd += [
+                "-map", "0:v:0",
+                "-vf", (
+                    f"select=gte(n\\,{ENTRANCE_CLASSIFICATION_FRAME}),"
+                    f"scale={ENTRANCE_SIGNATURE_WIDTH}:{ENTRANCE_SIGNATURE_HEIGHT}:"
+                    "flags=area,format=gray"
+                ),
+                "-frames:v", "1", "-q:v", "5", "-y",
+                str(self.classification_path),
+            ]
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             text=True, close_fds=True,
@@ -681,6 +946,20 @@ class EarlyMediaCapture:
                     self.audio_packets += 1
                 except BlockingIOError:
                     break
+        if (not self.classification_reported
+                and self.classification_path.exists()
+                and self.classification_path.stat().st_size > 0):
+            self.classification_reported = True
+            try:
+                name, distance, reason = classify_entrance_image(self.classification_path)
+                elapsed = time.time() - self.started
+                if name:
+                    log(f"ENTRANCE VISUAL: {name} distance={distance:.3f} elapsed={elapsed:.2f}s diagnostic-only")
+                else:
+                    shown = "n/a" if distance is None else f"{distance:.3f}"
+                    log(f"ENTRANCE VISUAL: sconosciuto reason={reason} distance={shown} elapsed={elapsed:.2f}s diagnostic-only")
+            except Exception as exc:
+                log(f"ENTRANCE VISUAL: errore {type(exc).__name__}: {exc}")
         if (not self.snapshot_reported and self.snapshot.exists()
                 and self.snapshot.stat().st_size > 0):
             os.chmod(self.snapshot, 0o600)
@@ -691,15 +970,28 @@ class EarlyMediaCapture:
                 f"({self.snapshot.stat().st_size} byte); "
                 f"audio_udp={self.audio_packets}; live=udp://{LIVE_VIDEO_HOST}:{LIVE_VIDEO_PORT}"
             )
+            if ENTRANCE_CLASSIFICATION_ENABLED and not self.classification_reported:
+                try:
+                    name, distance, reason = classify_entrance_image(self.snapshot)
+                    elapsed = time.time() - self.started
+                    shown = "n/a" if distance is None else f"{distance:.3f}"
+                    log(
+                        f"ENTRANCE VISUAL FALLBACK: {name or 'sconosciuto'} "
+                        f"reason={reason} distance={shown} elapsed={elapsed:.2f}s"
+                    )
+                except Exception as exc:
+                    log(f"ENTRANCE VISUAL FALLBACK: errore {type(exc).__name__}: {exc}")
         if not self.process or self.process.poll() is None:
             return False
         stderr = self.process.stderr.read()[-2000:].strip()
         if not self.snapshot_reported:
             set_snapshot_pending(self.call_id, False)
-            log(f"SNAPSHOT FALLITO call-id={self.call_id} audio_udp={self.audio_packets}: {stderr or 'nessun frame decodificabile'}")
+        log(f"SNAPSHOT FALLITO call={call_reference(self.call_id)} audio_udp={self.audio_packets}: {stderr or 'nessun frame decodificabile'}")
         self.close_audio()
         self.close_relay()
         self.cleanup_files()
+        if self.snapshot_reported:
+            start_post_call_fallback(self.snapshot)
         return True
 
     def stop(self, reason):
@@ -711,10 +1003,12 @@ class EarlyMediaCapture:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=2)
-        log(f"Media chiuso call-id={self.call_id}: {reason}")
+        log(f"Media chiuso call={call_reference(self.call_id)}: {reason}")
         self.close_audio()
         self.close_relay()
         self.cleanup_files()
+        if self.snapshot_reported:
+            start_post_call_fallback(self.snapshot)
 
     def relay_media(self):
         destinations = {
@@ -738,7 +1032,7 @@ class EarlyMediaCapture:
                         sequence = int.from_bytes(packet[2:4], "big")
                         ssrc = int.from_bytes(packet[8:12], "big")
                         log(
-                            f"RTP META call-id={self.call_id}: "
+                            f"RTP META call={call_reference(self.call_id)}: "
                             f"ssrc=0x{ssrc:08x} pt={payload} "
                             f"seq={sequence} marker={marker}"
                         )
@@ -762,13 +1056,13 @@ class EarlyMediaCapture:
             )
             self.pli_sent = True
             log(
-                f"SRTCP PLI inviato call-id={self.call_id}: "
+                f"SRTCP PLI inviato call={call_reference(self.call_id)}: "
                 f"media_ssrc=0x{media_ssrc:08x} -> "
                 f"{self.remote_ip}:{self.remote_rtcp_port}"
             )
         except Exception as exc:
             log(
-                f"SRTCP PLI fallito call-id={self.call_id}: "
+                f"SRTCP PLI fallito call={call_reference(self.call_id)}: "
                 f"{type(exc).__name__}: {exc}"
             )
 
@@ -798,10 +1092,11 @@ class EarlyMediaCapture:
         self.audio_sockets = []
 
     def cleanup_files(self):
-        try:
-            self.sdp_path.unlink()
-        except FileNotFoundError:
-            pass
+        for path in (self.sdp_path, self.classification_path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
 class HomtouchListener:
 
@@ -1185,7 +1480,7 @@ class HomtouchListener:
         to_tag = self.dialog_tags.setdefault(call_id, token(8))
         self.respond_basic(raw, 183, "Session Progress", to_tag, capture.answer_sdp)
         log(
-            f"183 inviato: call-id={call_id} RTP/SRTP {self.local_ip}:{local_port} "
+            f"183 inviato: call={call_reference(call_id)} RTP/SRTP attivo "
             f"H264 PT={payload} crypto-tag={crypto_tag} "
             f"audio={audio['local_port'] if audio else 'rifiutato'}"
         )
@@ -1227,7 +1522,6 @@ class HomtouchListener:
 
 
     def analyse_invite(self, raw):
-        headers, _ = sip_headers(raw)
         body = sip_body(raw)
 
         path = self.save_raw(raw, "INVITE")
@@ -1238,35 +1532,10 @@ class HomtouchListener:
         else:
             log("INVITE RAW: salvataggio disabilitato")
 
-        for key in (
-            "from",
-            "to",
-            "call-id",
-            "contact",
-            "user-agent",
-        ):
-            if key in headers:
-                log(
-                    f"{key.upper()}: "
-                    f"{headers[key]}"
-                )
-
-        # Cerca DEVADDR sia negli header sia nell'SDP
-        whole = raw.decode(
-            "utf-8",
-            errors="replace"
-        )
-
-        devaddr_matches = re.findall(
-            r"(?im)^.*DEVADDR.*$",
-            whole
-        )
-
-        if devaddr_matches:
-            for item in devaddr_matches:
-                log(f"DEVADDR: {item.strip()}")
-        else:
-            log("DEVADDR: non trovato")
+        fingerprints = entrance_fingerprints(raw)
+        log("ENTRANCE META v1: " + json.dumps(
+            fingerprints, sort_keys=True, separators=(",", ":")
+        ))
 
         video_lines = re.findall(
             r"(?im)^m=video.*$",
@@ -1307,14 +1576,6 @@ class HomtouchListener:
                 f"({'conservati nel file raw' if path else 'non salvati'})"
             )
 
-        conn_lines = re.findall(
-            r"(?im)^c=IN\s+IP4\s+.*$",
-            body
-        )
-
-        for item in conn_lines:
-            log(f"CONNECTION: {item.strip()}")
-
         log("=" * 70)
 
 
@@ -1323,7 +1584,7 @@ class HomtouchListener:
 
         method = first.split(" ", 1)[0].upper()
 
-        log(f"SIP RX: {first}")
+        log(f"SIP RX: {method or 'UNKNOWN'}")
 
         if method == "INVITE":
             self.analyse_invite(raw)
@@ -1479,6 +1740,7 @@ signal.signal(
 
 
 def main():
+    global ENTRANCE_PROFILES
     validate_runtime_settings()
     BASE.mkdir(
         parents=True,
@@ -1495,7 +1757,12 @@ def main():
     os.chmod(SNAPSHOT_DIR, 0o700)
     os.chmod(RUNTIME_DIR, 0o700)
     ensure_placeholder_snapshot()
+    if ENTRANCE_CLASSIFICATION_ENABLED:
+        ENTRANCE_PROFILES = load_entrance_profiles()
+        if len(ENTRANCE_PROFILES) < 2:
+            raise RuntimeError("classificazione ingressi attiva ma servono almeno due profili")
     snapshot_server = start_snapshot_server()
+    start_post_call_fallback(latest_snapshot())
 
     log("=" * 70)
     log("HOMETOUCH SIP diagnostic listener")
@@ -1506,6 +1773,8 @@ def main():
         f"Domain: {DOMAIN}"
     )
     log(f"Pool RTP/RTCP: UDP {MEDIA_PORT_START}-{MEDIA_PORT_END}")
+    if ENTRANCE_CLASSIFICATION_ENABLED:
+        log(f"Classificazione ingressi diagnostica: {len(ENTRANCE_PROFILES)} profili, frame={ENTRANCE_CLASSIFICATION_FRAME}")
     log("=" * 70)
 
     reconnect_delay = max(0.0, RECONNECT_INITIAL_DELAY)
@@ -1537,6 +1806,7 @@ def main():
 
     snapshot_server.shutdown()
     snapshot_server.server_close()
+    stop_post_call_fallback("arresto listener")
     log("Listener terminato")
 
 
