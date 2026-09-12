@@ -60,6 +60,36 @@ certificate enrollment fails, do not blindly repeat `--apply`: first run the
 read-only endpoint listing and seek help, otherwise a retry may consume another
 slot.
 
+## Troubleshooting invited-account discovery
+
+An accepted invitation may work in the official Door Entry app while an older
+version of this tool reports that no plant is visible. Update the repository
+and repeat the non-mutating command first:
+
+```sh
+git pull
+./scripts/bticino-onboard --email dedicated-account@example.com
+```
+
+The current parser searches known direct and nested plant response layouts and
+also checks the invitations collection. If the result is still empty, collect
+the privacy-safe structural diagnostic:
+
+```sh
+./scripts/bticino-onboard --email dedicated-account@example.com \
+  --diagnose-discovery
+```
+
+Only the line beginning with `Diagnosi discovery` is intended for an issue or
+support message. It contains response container types and counts only. It does
+not contain JSON keys or values, plant/gateway identifiers, email addresses,
+credentials, session tokens or invitation contents. The command performs only
+authenticated reads and never provisions an endpoint.
+
+Before reporting a problem, confirm that the invitation was accepted inside
+the dedicated account rather than merely received by email. Never use
+`--apply` as a discovery workaround.
+
 ## Evidence and current limits
 
 Static analysis of the HOMETOUCH Door Entry Android application exposes
@@ -100,5 +130,5 @@ drop-in HOMETOUCH API specification.
 
 - Verify read-only login, plant and gateway discovery against the live service. (done)
 - Verify explicit `--apply` SIP-account creation and local CSR enrollment.
-- Add redacted diagnostics and rollback/revocation guidance.
+- Expand redacted diagnostics and rollback/revocation guidance. (in progress)
 - Test with a dedicated invited account on a clean installation.

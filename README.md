@@ -18,7 +18,8 @@ a keyframe with authenticated SRTCP feedback, produces a private snapshot and
 forwards live video to Homebridge on the local loopback interface.
 
 > **Project status: experimental.** Incoming video works on the tested system.
-> On-demand activation, two-way audio, reliable entrance identification and
+> Local entrance classification and post-call snapshot fallback are available
+> experimentally. On-demand activation, two-way audio and entrance-specific
 > opening controls are still under development.
 
 ## Support the project
@@ -39,8 +40,10 @@ optional and do not include rewards or support services.
 | H.264 SRTP/SDES snapshot and short live early media | Verified on one HOMETOUCH installation |
 | HomeKit doorbell notification through Homebridge | Verified on one HOMETOUCH installation |
 | Creation of a fresh SIP endpoint and certificate | Implemented and simulated; live verification still required |
-| On-demand video after the incoming call ends | Not implemented |
-| Two-way audio, opening controls and reliable multi-entrance identity | Not implemented |
+| Continuous last-snapshot fallback after the incoming call ends | Implemented; broader HomeKit testing required |
+| Privacy-preserving multi-entrance classification | Implemented experimentally; requires local calibration |
+| True on-demand live video without an incoming call | Not implemented |
+| Two-way audio and entrance-specific opening controls | Not implemented |
 
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
@@ -97,6 +100,32 @@ The password is requested without echo and is not saved. The command stops
 after listing/selecting the plant and checking existing SIP endpoints. Do not
 use `--apply` on a personal account.
 
+### Invited account cannot see the plant
+
+If the dedicated account can control the installation in the official Door
+Entry app but onboarding reports `Nessun impianto visibile`, first update the
+checkout and retry normal read-only discovery:
+
+```sh
+git pull
+./scripts/bticino-onboard --email dedicated-account@example.com
+```
+
+The cloud has returned more than one response layout for invited users. The
+onboarding parser accepts the known direct and nested layouts and can inspect
+both the plants and invitations collections. If discovery still fails, run:
+
+```sh
+./scripts/bticino-onboard --email dedicated-account@example.com \
+  --diagnose-discovery
+```
+
+Share only the line beginning with `Diagnosi discovery`. It reports container
+types and record counts, never response keys, identifiers, account data,
+tokens or cloud response values. Do not share the session line, password,
+complete terminal history or screenshots containing personal information.
+This diagnostic is read-only and does not require `--apply`.
+
 After checking the selected installation, provision the dedicated bridge:
 
 ```sh
@@ -139,6 +168,17 @@ files and must never be committed.
 
 Raw SIP capture is disabled by default because SDP contains live SRTP key
 material. Do not enable it on an unattended public-facing installation.
+
+Entrance fingerprints are keyed locally so raw SIP/SDP identifiers are not
+written to logs. Optional visual entrance profiles are ordinary private camera
+images: keep them outside the repository in an owner-only directory and never
+attach them to an issue. Visual classification is installation-specific and
+must be calibrated with several known samples for every entrance.
+
+When `post_call_fallback_seconds` is negative, the loopback video endpoint
+continues serving the most recent private snapshot after a call ends. This can
+prevent an older HomeKit notification from becoming blank, but it is not live
+video: true on-demand activation of the HOMETOUCH camera remains future work.
 
 The runtime directory and executable paths are configurable. The example uses
 `/opt/bticino-sniffer`; adapt `base_dir`, `ffmpeg` and `openssl` to the host.
@@ -240,8 +280,8 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
 - Replace the prototype scripts with a packaged service and guided installer
 - Verify dedicated-account provisioning end-to-end on additional installations
 - Identify multiple entrance panels without relying on random RTP SSRC values
-- Validate privacy-preserving local visual entrance classification before using
-  it to select an entrance-specific HomeKit event
+- Validate privacy-preserving local visual entrance classification across more
+  installations before using it by default for entrance-specific HomeKit events
 - Add on-demand video activation
 - Validate the continuous latest-snapshot fallback across additional HomeKit clients
 - Add receive-only audio, followed by carefully tested two-way audio
