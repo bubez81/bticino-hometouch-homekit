@@ -105,9 +105,20 @@ def payload_shape(value: Any) -> str:
 class CloudResponse:
     body: bytes
     headers: Any
+    status: int | None = None
+
+    def diagnostic(self) -> str:
+        # Only fixed labels are exposed: headers and bodies can contain secrets.
+        media = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+        known = {"application/json", "text/json", "text/html", "text/plain", "application/octet-stream"}
+        content_type = media if media in known else ("altro" if media else "assente")
+        return f"HTTP {self.status if isinstance(self.status, int) else 'sconosciuto'}; tipo={content_type}; byte={len(self.body)}"
 
     def json(self) -> Any:
-        return payload_json(self.body)
+        try:
+            return payload_json(self.body)
+        except OnboardingError as exc:
+            raise OnboardingError("Risposta cloud non valida (" + self.diagnostic() + ")") from exc
 
 
 class EliotClient:
@@ -139,7 +150,7 @@ class EliotClient:
         )
         try:
             with self.opener.open(req, timeout=self.timeout) as response:
-                result = CloudResponse(response.read(), response.headers)
+                result = CloudResponse(response.read(), response.headers, response.status)
         except urllib.error.HTTPError as exc:
             raw_detail = exc.read(512)
             detail = raw_detail.decode("utf-8", "replace")
@@ -217,11 +228,21 @@ class EliotClient:
         return [item for item in value if isinstance(item, dict)]
 
     def create_sip_account(self, account: dict[str, str]) -> dict[str, Any]:
-        value = self.request("POST", "/eliot/sip/user", account).json()
+        try:
+            response = self.request("POST", "/eliot/sip/user", account, response_kind="binary")
+            value = response.json()
+        except OnboardingError as exc:
+            raise OnboardingError(
+                f"Creazione endpoint SIP: {exc}. Esito della creazione non confermato; "
+                "non ripetere --apply. Verificare prima gli endpoint con un comando senza --apply."
+            ) from exc
         if isinstance(value, list) and value:
             value = value[0]
         if not isinstance(value, dict):
-            raise OnboardingError("Account SIP restituito in formato inatteso")
+            raise OnboardingError(
+                "Account SIP restituito in formato inatteso (" + response.diagnostic() +
+                "). Esito della creazione non confermato; non ripetere --apply."
+            )
         return value
 
     def sign_certificate(self, common_name: str, csr: str) -> bytes:

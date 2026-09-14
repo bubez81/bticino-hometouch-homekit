@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 import urllib.error
 
 from src.bticino_onboard import (
+    CloudResponse,
     EliotClient,
     OnboardingError,
     atomic_private_json,
@@ -27,6 +28,31 @@ from src.bticino_onboard import (
 
 
 class OnboardTests(unittest.TestCase):
+    def test_creation_invalid_response_has_safe_metadata_and_no_retry(self):
+        for status, body, media in (
+            (204, b"", "application/json"),
+            (200, b"<html>private-token</html>", "text/html"),
+            (200, b"private-token", "private-token"),
+        ):
+            with self.subTest(status=status, media=media):
+                client = EliotClient()
+                client.request = Mock(return_value=CloudResponse(body, {"Content-Type": media}, status))
+                with self.assertRaises(OnboardingError) as raised:
+                    client.create_sip_account({"SipAccount": "private-account"})
+                message = str(raised.exception)
+                self.assertIn(f"HTTP {status}", message)
+                self.assertIn(f"byte={len(body)}", message)
+                self.assertIn("non ripetere --apply", message)
+                self.assertNotIn("private-token", message)
+                self.assertNotIn("private-account", message)
+                self.assertEqual(client.request.call_count, 1)
+
+    def test_creation_valid_response_preserves_one_time_password(self):
+        client = EliotClient()
+        client.request = Mock(return_value=CloudResponse(
+            b'{"SipPassword":"one-time"}', {"Content-Type": "application/json"}, 201))
+        self.assertEqual(client.create_sip_account({}), {"SipPassword": "one-time"})
+
     class FakeClient:
         endpoint_count = 0
         created_requests = []
