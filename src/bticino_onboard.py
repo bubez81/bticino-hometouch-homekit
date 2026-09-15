@@ -468,7 +468,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Utenti senza endpoint SIP: {len(pending)}")
     if args.list_endpoints:
         for index, account in enumerate(provisioned, 1):
-            print(f"  {index:2}. {endpoint_summary(account)}")
+            password_state = "presente" if isinstance(account.get("SipPassword"), str) and account["SipPassword"].strip() else "assente"
+            print(f"  {index:2}. {endpoint_summary(account)} — password SIP nel GET: {password_state}")
         for index, account in enumerate(pending, len(provisioned) + 1):
             print(f"  {index:2}. IN ATTESA — {endpoint_summary(account)}")
     if args.probe_removal is not None:
