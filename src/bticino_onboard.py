@@ -404,6 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plant-id")
     parser.add_argument("--device-name", default="Home Assistant Bridge")
     parser.add_argument("--device-id", help="ID esadecimale persistente di 12 caratteri")
+    parser.add_argument("--reuse-endpoint", metavar="NOME", help="riutilizza un endpoint con questo nome esatto, senza crearne uno nuovo")
     default_config_root = Path(
         os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
     ) / "bticino-hometouch"
@@ -511,28 +512,42 @@ def main(argv: list[str] | None = None) -> int:
         print("Ripetere con --apply soltanto dopo aver verificato account e impianto.")
         return 0
 
-    if len(provisioned) >= KNOWN_HOMETOUCH_SIP_LIMIT:
+    if args.reuse_endpoint:
+        matches = [a for a in provisioned if a.get("DeviceName") == args.reuse_endpoint]
+        if len(matches) != 1:
+            raise OnboardingError("Recupero richiede esattamente un endpoint con il nome indicato")
+        recovered = matches[0]
+        if not isinstance(recovered.get("SipPassword"), str) or not recovered["SipPassword"].strip():
+            raise OnboardingError("Password SIP non recuperabile; nessuna creazione tentata")
+        if args.device_id:
+            raise OnboardingError("Non combinare --device-id con --reuse-endpoint")
+        if args.output.resolve().exists() and any(args.output.resolve().iterdir()):
+            raise OnboardingError("Per il recupero scegliere una directory --output nuova o vuota")
+    else:
+        recovered = None
+
+    if recovered is None and len(provisioned) >= KNOWN_HOMETOUCH_SIP_LIMIT:
         raise OnboardingError(
             f"Impianto pieno: {len(provisioned)}/{KNOWN_HOMETOUCH_SIP_LIMIT} "
             "endpoint SIP. Nessuna creazione tentata; liberare uno slot tramite "
             "assistenza BTicino o rimuovendo un utente dell’impianto non più usato."
         )
 
-    device_id = (args.device_id or secrets.token_hex(6)).upper()
+    device_id = str(recovered["IdDevice"]) if recovered else (args.device_id or secrets.token_hex(6)).upper()
     if not re.fullmatch(r"[0-9A-F]{12}", device_id):
         raise OnboardingError("--device-id deve contenere 12 caratteri esadecimali")
     local_part = email.replace("@", "-")
-    sip_account = f"{local_part}-{device_id}@{gateway_id}.bs.iotleg.com"
+    sip_account = str(recovered["SipAccount"]) if recovered else f"{local_part}-{device_id}@{gateway_id}.bs.iotleg.com"
     request_account = {
         "SipAccount": sip_account,
         "DeviceName": args.device_name,
         "GatewayId": gateway_id,
         "IdDevice": device_id,
     }
-    print("Creazione endpoint SIP dedicato…")
-    created = client.create_sip_account(request_account)
+    print("Recupero endpoint SIP esistente…" if recovered else "Creazione endpoint SIP dedicato…")
+    created = recovered if recovered else client.create_sip_account(request_account)
     # Some service versions return the account only on the subsequent GET.
-    refreshed = client.sip_accounts(plant_id, gateway_id)
+    refreshed = [] if recovered else client.sip_accounts(plant_id, gateway_id)
     matches = [a for a in refreshed if a.get("SipAccount") == sip_account]
     # Preserve one-time values, notably a SIP password returned only by POST.
     account = {**created, **matches[0]} if matches else created

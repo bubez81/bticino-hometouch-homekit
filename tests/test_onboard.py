@@ -209,6 +209,24 @@ class OnboardTests(unittest.TestCase):
                 ])
         self.assertEqual(self.FakeClient.created_requests, [])
 
+    def test_reuse_never_creates_endpoint(self):
+        account = {"DeviceName": "Home Assistant Bridge", "IdDevice": "AABBCCDDEEFF",
+                   "SipAccount": "existing@example.invalid", "SipPassword": "secret-existing"}
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "src.bticino_onboard.EliotClient", self.FakeClient
+        ), patch.object(self.FakeClient, "sip_accounts", return_value=[account]), patch.object(
+            self.FakeClient, "create_sip_account"
+        ) as create, patch("src.bticino_onboard.generate_key_and_csr", return_value="CSR"), patch(
+            "src.bticino_onboard.extract_certificates"
+        ), patch.dict(os.environ, {"TEST_BTICINO_PASSWORD": "test"}), patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(main(["--email", "bridge@example.invalid", "--password-env", "TEST_BTICINO_PASSWORD",
+                                   "--output", directory, "--reuse-endpoint", "Home Assistant Bridge", "--apply"]), 0)
+            create.assert_not_called()
+            credentials = json.loads((Path(directory) / "sip_credentials.json").read_text())
+            self.assertEqual(credentials["SipAccount"], account["SipAccount"])
+            self.assertEqual(credentials["SipPassword"], account["SipPassword"])
+            self.assertNotIn(account["SipPassword"], stdout.getvalue())
+
     def test_apply_writes_complete_private_configuration(self):
         def fake_key(_openssl, _common_name, key_path, csr_path):
             key_path.write_text("TEST KEY", encoding="ascii")
