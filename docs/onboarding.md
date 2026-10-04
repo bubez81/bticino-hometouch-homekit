@@ -119,10 +119,12 @@ drop-in HOMETOUCH API specification.
 - Make account/device revocation part of the uninstall documentation.
 - Refuse insecure TLS, certificate-validation bypasses and instructions that
   depend on old vulnerable application versions.
-- The legacy cloud can accumulate stale SIP endpoints but exposes no verified
-  per-endpoint removal operation. The tool must never guess a destructive API;
-  at capacity, ask the vendor to purge stale devices or remove only a plant
-  user that the owner has explicitly decided no longer needs access.
+- The legacy cloud can accumulate stale SIP endpoints. Individual device removal
+  was verified on the HOMETOUCH wall panel: Settings → Account → select the user
+  → Disconnect beside an obsolete smartphone. This is not the phone app's user
+  list. Preserve active phones and bridge endpoints. Removing the last device
+  can disassociate the user; avoid the whole-user/all-users controls unless intended.
+  No per-endpoint deletion API is implemented in this tool.
 - The tested HOMETOUCH cloud limit is 20 provisioned SIP endpoints. Onboarding
   detects this before creation and refuses to make a request when full.
 
@@ -130,5 +132,24 @@ drop-in HOMETOUCH API specification.
 
 - Verify read-only login, plant and gateway discovery against the live service. (done)
 - Verify explicit `--apply` SIP-account creation and local CSR enrollment.
+  (Verified on one installation via creation, existing-endpoint recovery and
+  certificate enrollment on 2026-10-04; the creation response was empty HTTP 201.)
 - Expand redacted diagnostics and rollback/revocation guidance. (in progress)
 - Test with a dedicated invited account on a clean installation.
+
+## Migrating an existing bridge
+
+Provision or recover the dedicated endpoint into a separate private directory.
+If creation reports an uncertain outcome, list endpoints before retrying and
+recover the uniquely named endpoint with `--reuse-endpoint`, as described above.
+Keep the old endpoint until the replacement is validated.
+
+`scripts/migrate-dedicated-account.py` is a macOS maintenance helper for the
+existing `/opt/bticino-sniffer/config.json` deployment. It reads credential paths
+from that file, verifies gateway consistency, certificate validity and matching
+keys, saves the previous files under a private backup directory, installs the
+replacement and requests a listener restart. It does not change HomeKit pairing.
+On installation/restart-command failure it attempts to restore the backup.
+Successful script completion still requires checking SIP registration, then
+notification, live video, conversation and opening on the physical installation.
+The helper is installation-specific, not a universal migration installer.

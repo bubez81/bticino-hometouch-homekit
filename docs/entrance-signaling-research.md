@@ -1,5 +1,10 @@
 # Entrance signaling investigation — 2026-09-16
 
+Historical research record. As of 2026-10-04 the observer is included in the
+published source, but a reliable entrance-name mapping remains unverified.
+Contextual opening uses the active call rather than a confirmed entrance label;
+see [contextual opening](contextual-unlock.md).
+
 ## Observed in the locally retained official Android DEX
 
 - `Ly0/n;->r(String, Call, State)` (`VctHomepageFragment`, updateCallStatus)

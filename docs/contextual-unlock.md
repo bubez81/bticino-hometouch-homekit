@@ -1,5 +1,11 @@
 # Contextual opening — experimental
 
+Current behavior (2026-10-04): the separate lock displays assumed
+closed/open/closed pulse state. Incoming live can accept a call while keeping
+the microphone gated. Physical entrance selection and end-to-end opening after
+account migration remain unverified. The dated deployment entries below are
+historical; they do not establish physical success.
+
 Static evidence: official Android VctActivityLinphone.onCreate constructs the
 SlideToTrigView handler linphone.c without MhpDevice. Its a() passes an empty
 address and CID 10060 to VctLinphoneService.P. That method sends the pair
@@ -10,7 +16,7 @@ selection behavior for our endpoint.
 
 Implementation is disabled by default on both sides: plugin enableCallUnlock
 and listener incoming_unlock must both be true.
-UI now uses a LockMechanism (2026-09-22), with UNKNOWN physical state because
+UI uses a LockMechanism with assumed SECURED state at rest because
 there is no contact sensor. The target resets to SECURED to rearm the pulse;
 this neither locks the door nor confirms its physical state. Opening requires a
 single incoming dialog established by ACK, answered by the same HomeKit session
@@ -60,11 +66,11 @@ and lock identities. Bridge restart and IPC connection verified.
 In Apple Home assign the new lock to the same room as the camera. This room
 assignment cannot be set through this Homebridge accessory configuration.
 The real notification UI and physical opening are still pending verification.
-The physical lock state remains UNKNOWN, not a claimed closed/open position.
+The physical lock state is not measured; see the assumed display behavior below.
 
 ## User-requested assumed pulse display
 
-Supersedes the UNKNOWN display above: at the user's explicit request, display
+Supersedes the earlier UNKNOWN display: at the user's explicit request, display
 SECURED at rest, UNSECURED only after successful command submission, and SECURED
 again after 3 seconds. These are assumed UI states, never physical sensor feedback
 or confirmation of delivery. The timeout sends no command. Failed requests do not

@@ -23,6 +23,9 @@ forwards live video to Homebridge on the local loopback interface.
 > incoming-call audio and contextual opening. Hardware validation is incomplete;
 > see the [October update](docs/update-2026-10.md) before enabling these features.
 
+See the [changelog](CHANGELOG.md), [plugin architecture](docs/plugin-architecture.md)
+and [current validation status](homebridge-bticino-hometouch/LIVE-VALIDATION.md).
+
 ## Support the project
 
 If this project is useful to you, you can support its continued development,
@@ -142,6 +145,9 @@ full.
 
 ## Quick start for testers
 
+These steps describe the Camera-ffmpeg integration. The experimental dedicated
+plugin has a separate [architecture and configuration guide](docs/plugin-architecture.md).
+
 1. Invite a new, dedicated Door Entry account to the installation and accept
    the invitation. Do not use the owner's personal account for the bridge.
 2. Install Python 3.9 or newer, FFmpeg and OpenSSL. Install Homebridge and
@@ -179,7 +185,9 @@ must be calibrated with several known samples for every entrance.
 When `post_call_fallback_seconds` is negative, the loopback video endpoint
 continues serving the most recent private snapshot after a call ends. This can
 prevent an older HomeKit notification from becoming blank, but it is not live
-video: true on-demand activation of the HOMETOUCH camera remains future work.
+video. The dedicated plugin has a separate experimental on-demand path; packet
+reception alone does not establish that an image is fresh. See the
+[on-demand notes](docs/on-demand-research.md).
 
 The optional `--diagnose-activations` probe decrypts configuration archives in
 memory using the format password used by the official client (not your account

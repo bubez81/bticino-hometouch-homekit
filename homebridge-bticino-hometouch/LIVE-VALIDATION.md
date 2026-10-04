@@ -1,4 +1,28 @@
-# Live validation — 2026-09-16
+# Live validation
+
+## Current status — 2026-10-04
+
+The dedicated bridge runs as a persistent service on the test installation.
+Incoming audio/dialog modules are integrated, and opening incoming live can
+accept the call with the microphone still muted. Talk enables outgoing audio.
+The separate contextual lock is implemented with assumed pulse state; physical
+selection and opening still require validation.
+
+Dedicated-account migration completed with successful SIP registration. A
+HomeKit video session returned receiver reports after migration. Its audio was
+explicitly diagnostic silence, so it did not validate the outdoor microphone.
+Do not infer fresh live imagery from encoded-frame or reception counters alone.
+
+Local checks: 86 Python tests (one optional dependency skip), plugin lifecycle
+and lock tests, encrypted video decode and bidirectional synthetic audio passed.
+The old camera-probe fixture failure described below has been corrected.
+Real ring notification, conversation and opening after migration remain pending.
+
+## Historical development log — 2026-09-16
+
+The following entries preserve intermediate observations. Statements about
+foreground execution, missing integration and outstanding fixture failures
+describe that date, not the current implementation above.
 
 Only the isolated Cubetto test bridge was changed (`/private/tmp/bticino-child`, port 51991).
 The main Homebridge was not changed. No HomeKit identity reset is necessary.
@@ -29,7 +53,7 @@ Check longer duration, repeat openings and direct 1280x720 playback before decla
 - Audio remains silence; synchronized-audio experiment is OFF. Local index.js callback fix has not been deployed.
 - Awaiting comparison with live viewing in official Door Entry app; do not imply the project is finished.
 
-## Two-way audio implementation — not connected or deployed yet
+### Historical stage: audio modules before integration
 
 User now explicitly requests a full HomeKit doorbell, including real two-way audio and answering an incoming call without creating a second outbound call.
 
@@ -43,7 +67,7 @@ New local components:
 These modules are intentionally NOT imported by the deployed listener/plugin yet. Remaining integration: attach the active incoming call's encrypted media to loopback relays, expose controlled IPC attach/answer/hangup operations, wire HAP twoWayAudio negotiation and return audio, and ensure early SDP/final answer directions agree. Do not advertise working two-way audio until connected and tested on the physical doorbell. Existing deployed audio is still synthetic silence.
 
 `rtcp-diagnostic.js` authenticates SRTCP before parsing and logs only reception statistics, never keys or media payloads.
-# Incoming-call audio integration — 2026-09-16 19:39
+### Historical stage: incoming-call audio integration — 2026-09-16 19:39
 
 Installed on Cubetto's **test bridge only** (port 51991) and its SIP listener.
 Backup: `/opt/bticino-sniffer/backups/incoming-audio-ltrgagu6` (numbered files with manifest).

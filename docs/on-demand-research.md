@@ -1,5 +1,9 @@
 # On-demand video research
 
+Current status: 2026-10-04. Outbound probing and dedicated-plugin integration
+are implemented experimentally. End-to-end freshness and sustained reliability
+are not yet established across installations.
+
 Static inspection of the official Android client identified two different paths:
 
 - `VctLinphoneService.P` sends doorlock/service MESSAGE commands for CIDs
@@ -12,7 +16,8 @@ Static inspection of the official Android client identified two different paths:
 The configuration reader extracts explicit candidates (CIDs 10050/10061) and
 the configured default camera. It preserves leading zeroes, skips invalid or
 unknown addresses, and never assigns entrance names from list order. This is
-preparatory discovery, not a working outbound SIP implementation.
+discovery only; `scripts/probe-camera.py` implements the separate outbound SIP
+transaction and media handling.
 
 To save the small private candidate file outside the repository:
 
@@ -23,11 +28,12 @@ To save the small private candidate file outside the repository:
 The default destination is the user's configuration directory under
 `bticino-hometouch/camera-candidates.json`, with mode 600. Do not share this file.
 The command neither creates SIP endpoints nor sends camera/doorlock commands.
-Next validation requires these real addresses and an outbound INVITE transaction
-with authentication, media negotiation, ACK and clean termination.
+The probe handles outbound negotiation, ACK and termination. Tests exercise the
+signaling lifecycle with synthetic responses. Hardware call lifetime remains
+gateway-controlled; compare visible movement with the real scene to verify freshness.
 
 The packaged `homekit-live-wrapper.sh` is an experimental standalone probe. It
 must not be assigned as the global `videoProcessor` for a Homebridge platform,
-because that would affect every Camera-ffmpeg accessory. A future integration
-must attach it only to the dedicated doorbell stream after testing the plugin's
-per-camera process model.
+because that would affect every Camera-ffmpeg accessory. The dedicated plugin
+uses its own stream manager and local IPC instead. Outgoing preview audio is
+currently diagnostic silence; incoming-call two-way audio is a separate path.
