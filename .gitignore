@@ -28,6 +28,8 @@ __pycache__/
 .venv/
 .analysis-venv/
 androguard.db
+androguard.db-shm
+androguard.db-wal
 androguard.log
 
 # Local tooling
@@ -36,3 +38,7 @@ androguard.log
 !.env.example
 outputs/
 onboarding-output/
+sip_credentials.json
+selection.json
+camera-candidates.json
+node_modules/

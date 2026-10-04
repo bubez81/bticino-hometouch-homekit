@@ -11,9 +11,12 @@ from unittest.mock import Mock, patch
 import urllib.error
 
 from src.bticino_onboard import (
+    CloudResponse,
     EliotClient,
     OnboardingError,
     atomic_private_json,
+    configuration_structure,
+    camera_candidates,
     extract_certificates,
     discover_gateway_id,
     endpoint_summary,
@@ -27,6 +30,90 @@ from src.bticino_onboard import (
 
 
 class OnboardTests(unittest.TestCase):
+    def test_creation_invalid_response_has_safe_metadata_and_no_retry(self):
+        for status, body, media in (
+            (204, b"", "application/json"),
+            (200, b"<html>private-token</html>", "text/html"),
+            (200, b"private-token", "private-token"),
+        ):
+            with self.subTest(status=status, media=media):
+                client = EliotClient()
+                client.request = Mock(return_value=CloudResponse(body, {"Content-Type": media}, status))
+                with self.assertRaises(OnboardingError) as raised:
+                    client.create_sip_account({"SipAccount": "private-account"})
+                message = str(raised.exception)
+                self.assertIn(f"HTTP {status}", message)
+                self.assertIn(f"byte={len(body)}", message)
+                self.assertIn("non ripetere --apply", message)
+                self.assertNotIn("private-token", message)
+                self.assertNotIn("private-account", message)
+                self.assertEqual(client.request.call_count, 1)
+
+    def test_creation_valid_response_preserves_one_time_password(self):
+        client = EliotClient()
+        client.request = Mock(return_value=CloudResponse(
+            b'{"SipPassword":"one-time"}', {"Content-Type": "application/json"}, 201))
+        self.assertEqual(client.create_sip_account({}), {"SipPassword": "one-time"})
+
+    def test_camera_candidates_exclude_locks_and_preserve_zeroes(self):
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr("archive.xml", '<archive><obj cid="10050" dev="2" where="001"/><obj cid="10060" dev="2" where="002"/><obj cid="10061" dev="6" where="003"/><obj cid="10050" dev="2" where="bad"/></archive>')
+            archive.writestr("conf.xml", '<configuratore><setup><vdes><communication><p_default><dev>2</dev><address>001</address></p_default></communication></vdes></setup></configuratore>')
+        rows = camera_candidates(stream.getvalue())
+        self.assertEqual([r["devaddr"] for r in rows], ["2001", "6003"])
+
+    def test_encrypted_configuration_and_wrong_password(self):
+        try:
+            import pyzipper
+        except ImportError:
+            self.skipTest("Install requirements-onboarding.txt for AES tests")
+        for password, succeeds in ((b"mhpG_123!", True), (b"wrong", False)):
+            stream = io.BytesIO()
+            with pyzipper.AESZipFile(stream, "w", compression=pyzipper.ZIP_DEFLATED,
+                                     encryption=pyzipper.WZ_AES) as archive:
+                archive.setpassword(password)
+                archive.writestr("archive.xml", b'<archive><device address="PRIVATE"/></archive>')
+            if succeeds:
+                result = "\n".join(configuration_structure(stream.getvalue()))
+                self.assertIn("device:1", result)
+                self.assertNotIn("PRIVATE", result)
+            else:
+                with self.assertRaises(OnboardingError):
+                    configuration_structure(stream.getvalue())
+
+    def test_configuration_structure_contains_names_but_no_values(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as output:
+            output.writestr(
+                "folder/archive.xml",
+                b'<archive><device name="Private entrance" address="1234"/></archive>',
+            )
+            output.writestr("conf.xml", b'<configuration><camera/></configuration>')
+        result = "\n".join(configuration_structure(archive.getvalue()))
+        self.assertIn("archive:1", result)
+        self.assertIn("device:1", result)
+        self.assertIn("attributi=[address,name]", result)
+        self.assertNotIn("Private entrance", result)
+        self.assertNotIn("1234", result)
+        self.assertIn("layout.xml=assente", result)
+
+    def test_configuration_structure_rejects_non_zip(self):
+        with self.assertRaises(OnboardingError):
+            configuration_structure(b"not a zip")
+
+    def test_configuration_structure_decodes_cloud_payload(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as output:
+            output.writestr("archive.xml", b"<archive><device/></archive>")
+        cloud = json.dumps({
+            "payload": base64.b64encode(archive.getvalue()).decode("ascii")
+        }).encode("utf-8")
+        result = "\n".join(configuration_structure(cloud))
+        self.assertIn("archive:1", result)
+        self.assertIn("device:1", result)
+        self.assertNotIn("payload", result)
+
     class FakeClient:
         endpoint_count = 0
         created_requests = []
@@ -182,6 +269,24 @@ class OnboardTests(unittest.TestCase):
                     "--apply",
                 ])
         self.assertEqual(self.FakeClient.created_requests, [])
+
+    def test_reuse_never_creates_endpoint(self):
+        account = {"DeviceName": "Home Assistant Bridge", "IdDevice": "AABBCCDDEEFF",
+                   "SipAccount": "existing@example.invalid", "SipPassword": "secret-existing"}
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "src.bticino_onboard.EliotClient", self.FakeClient
+        ), patch.object(self.FakeClient, "sip_accounts", return_value=[account]), patch.object(
+            self.FakeClient, "create_sip_account"
+        ) as create, patch("src.bticino_onboard.generate_key_and_csr", return_value="CSR"), patch(
+            "src.bticino_onboard.extract_certificates"
+        ), patch.dict(os.environ, {"TEST_BTICINO_PASSWORD": "test"}), patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(main(["--email", "bridge@example.invalid", "--password-env", "TEST_BTICINO_PASSWORD",
+                                   "--output", directory, "--reuse-endpoint", "Home Assistant Bridge", "--apply"]), 0)
+            create.assert_not_called()
+            credentials = json.loads((Path(directory) / "sip_credentials.json").read_text())
+            self.assertEqual(credentials["SipAccount"], account["SipAccount"])
+            self.assertEqual(credentials["SipPassword"], account["SipPassword"])
+            self.assertNotIn(account["SipPassword"], stdout.getvalue())
 
     def test_apply_writes_complete_private_configuration(self):
         def fake_key(_openssl, _common_name, key_path, csr_path):

@@ -1,0 +1,18 @@
+{
+  "bridge": {
+    "name": "BTicino HOMETOUCH Test",
+    "username": "0E:12:34:56:78:9A",
+    "port": 51888,
+    "pin": "031-45-154"
+  },
+  "accessories": [
+    {
+      "accessory": "BTicinoHOMETOUCH",
+      "name": "BTicino HOMETOUCH",
+      "ipcSocket": "/tmp/bticino-hometouch.sock",
+      "enableHapLive": false,
+      "enableCamera": true
+    }
+  ],
+  "platforms": []
+}

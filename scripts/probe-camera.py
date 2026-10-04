@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""Explicit outbound video signalling probe; no registration or door commands."""
+import argparse
+import base64
+import importlib.util
+import json
+import ipaddress
+import os
+import re
+import socket
+import signal
+import subprocess
+import tempfile
+import time
+import uuid
+from pathlib import Path
+
+
+class FrameDecoder:
+    """Isolated FFmpeg receiver: key in private temporary SDP, no public stream."""
+    def __init__(self, lib, client, raw, stream=False):
+        payload, fmtp, tag, key, *_ = client.parse_video_offer(raw)
+        self.directory = Path(tempfile.mkdtemp(prefix='bticino-video-probe-'))
+        self.sdp = self.directory / 'input.sdp'
+        self.frame = self.directory / 'frame.jpg'
+        self.stream_port = int(os.environ.get('BTICINO_LIVE_VIDEO_PORT', '22300'))
+        self.process = None
+        self.sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Find a free loopback pair outside the production receiver's range.
+        for port in range(25000, 25100, 2):
+            a, b = socket.socket(socket.AF_INET, socket.SOCK_DGRAM), socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                a.bind(('127.0.0.1', port)); b.bind(('127.0.0.1', port+1))
+                self.port = port
+                break
+            except OSError:
+                continue
+            finally:
+                a.close(); b.close()
+        else:
+            self.sender.close()
+            raise RuntimeError('No decoder ports')
+        text = (f'v=0\no=- 0 0 IN IP4 127.0.0.1\ns=Private probe\nc=IN IP4 127.0.0.1\nt=0 0\n'
+                f'm=video {port} RTP/SAVP {payload}\na=rtcp:{port+1}\na=rtpmap:{payload} H264/90000\n'
+                + (f'a=fmtp:{payload} {fmtp}\n' if fmtp else '')
+                + f'a=crypto:{tag} AES_CM_128_HMAC_SHA1_80 inline:{key}\na=recvonly\n')
+        try:
+            with os.fdopen(os.open(self.sdp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as file:
+                file.write(text)
+            command = [lib.FFMPEG, '-hide_banner', '-loglevel', 'error', '-nostdin',
+                '-protocol_whitelist', 'file,udp,rtp,srtp,crypto', '-rw_timeout', '12000000',
+                '-probesize', '32768', '-analyzeduration', '0',
+                '-i', str(self.sdp), '-map', '0:v:0', '-an']
+            if stream:
+                command += ['-c:v', 'copy', '-flush_packets', '1', '-muxdelay', '0', '-f', 'mpegts',
+                            f'udp://127.0.0.1:{self.stream_port}?pkt_size=1316']
+            command += ['-map', '0:v:0', '-vf', 'select=gte(n\\,10)',
+                        '-frames:v', '1', '-q:v', '2', '-y', str(self.frame)]
+            self.process = subprocess.Popen(command,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            self.close()
+            raise
+
+    def feed(self, packet):
+        self.sender.sendto(packet, ('127.0.0.1', self.port))
+
+    def close(self):
+        if self.process is not None:
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.kill(); self.process.wait()
+        self.sender.close()
+        self.sdp.unlink(missing_ok=True)
+        if self.frame.exists():
+            self.frame.chmod(0o600)
+
+
+def media_destinations(raw):
+    """Read IPv4 video destinations from authenticated SIP answer, fail closed."""
+    lines = raw.partition(b'\r\n\r\n')[2].decode('utf-8', 'replace').splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith('m=video ')), None)
+    if start is None:
+        raise ValueError('Missing video')
+    end = next((i for i in range(start+1, len(lines)) if lines[i].startswith('m=')), len(lines))
+    media = lines[start:end]
+    session = lines[:next(i for i, line in enumerate(lines) if line.startswith('m='))]
+    def address(section):
+        return next((x[9:] for x in section if x.startswith('c=IN IP4 ')), None)
+    host = address(media) or address(session)
+    def validate_host(value):
+        ip = ipaddress.IPv4Address(value)
+        if ip.is_multicast or ip.is_unspecified or ip.is_loopback or ip.is_link_local or str(ip) == '255.255.255.255':
+            raise ValueError('Unsupported media destination')
+        return str(ip)
+    host = validate_host(host)
+    port = int(media[0].split()[1])
+    rtcp_host, rtcp_port = host, port+1
+    for line in media:
+        if line.startswith('a=rtcp:'):
+            fields = line[7:].split()
+            rtcp_port = int(fields[0])
+            if len(fields) > 1:
+                if len(fields) != 4 or fields[1:3] != ['IN', 'IP4']:
+                    raise ValueError('Unsupported RTCP address')
+                rtcp_host = validate_host(fields[3])
+    if 'a=rtcp-mux' in media:
+        rtcp_host, rtcp_port = host, port
+    if not (1024 <= port <= 65535 and 1024 <= rtcp_port <= 65535):
+        raise ValueError('Unsupported media port')
+    return (host, port), (rtcp_host, rtcp_port)
+
+
+def prime_media(udp, rtcp, destinations):
+    # STUN Binding Indications carry no credentials and request no response.
+    # This probes UDP return-path opening, not ICE connectivity or consent.
+    for sock, destination in zip((udp, rtcp), destinations):
+        sock.sendto(b'\x00\x11\x00\x00\x21\x12\xa4\x42'+os.urandom(12), destination)
+
+
+def video_summary(raw):
+    """Report negotiated capabilities only, never addresses or SDES material."""
+    body = raw.partition(b'\r\n\r\n')[2].decode('utf-8', 'replace')
+    lines = body.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith('m=video ')), None)
+    if start is None:
+        return 'VIDEO_SDP present=False'
+    end = next((i for i in range(start+1, len(lines)) if lines[i].startswith('m=')), len(lines))
+    video = lines[start:end]
+    parts = video[0].split()
+    enabled = len(parts) >= 4 and parts[1].isdigit() and int(parts[1]) > 0
+    directions = ('sendrecv', 'sendonly', 'recvonly', 'inactive')
+    session = lines[:next((i for i, line in enumerate(lines) if line.startswith('m=')), start)]
+    direction = next((d for d in directions if 'a='+d in video),
+                     next((d for d in directions if 'a='+d in session), 'sendrecv'))
+    h264 = any(re.fullmatch(r'a=rtpmap:[0-9]+ H264/90000', line, re.I) for line in video)
+    crypto = any(line.startswith('a=crypto:') for line in video)
+    return f'VIDEO_SDP present=True enabled={enabled} h264={h264} crypto={crypto} direction={direction}'
+
+
+def offer(ip, port, candidate, key):
+    address = candidate['devaddr']
+    if not re.fullmatch(r'[0-9]{2,13}', address):
+        raise ValueError('Invalid camera address')
+    if candidate['cid'] not in ('10050', '10061'):
+        raise ValueError('Unsupported camera type')
+    extra = 'a=TVCC:1\r\n' if candidate['cid'] == '10061' else ''
+    return (f'v=0\r\no=probe 1 1 IN IP4 {ip}\r\ns=Camera probe\r\n'
+            f'c=IN IP4 {ip}\r\nt=0 0\r\na=DEVADDR:{address}\r\n{extra}'
+            f'm=audio 0 RTP/SAVP 0\r\na=inactive\r\n'
+            f'm=video {port} RTP/SAVP 96\r\na=rtcp:{port+1}\r\n'
+            'a=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1\r\n'
+            'a=recvonly\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 '
+            f'inline:{key}\r\n')
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('--listener', default='/opt/bticino-sniffer/listener.py')
+    p.add_argument('--candidates', required=True)
+    p.add_argument('--candidate', type=int, required=True)
+    p.add_argument('--prime-udp', action='store_true', help='test UDP return path using two STUN indications')
+    p.add_argument('--decode-frame', action='store_true', help='decifra e salva un fotogramma privato')
+    p.add_argument('--stream', action='store_true', help='inoltra il video decifrato a MPEG-TS localhost:22300')
+    p.add_argument('--rtcp-feedback', action='store_true', help='invia feedback SRTCP autenticato durante il video')
+    p.add_argument('--duration', type=int, default=10)
+    p.add_argument('--gateway', help='private gateway SIP host; default from SIP account')
+    args = p.parse_args()
+    if not 1 <= args.duration <= 300:
+        p.error('duration must be between 1 and 300 seconds')
+    stopping = False
+    def stop_requested(signum, frame):
+        nonlocal stopping
+        stopping = True
+    signal.signal(signal.SIGTERM, stop_requested)
+    signal.signal(signal.SIGINT, stop_requested)
+    rows = json.loads(Path(args.candidates).read_text())['candidates']
+    if not 1 <= args.candidate <= len(rows):
+        raise ValueError('Invalid candidate index')
+    spec = importlib.util.spec_from_file_location('listener', args.listener)
+    lib = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lib)
+    # Suppress library messages that could include account/network identifiers.
+    lib.log = lambda *a, **k: None
+    client = lib.HomtouchListener()
+    gateway = args.gateway or client.account.rsplit('@', 1)[-1]
+    if not re.fullmatch(r'[A-Za-z0-9.-]+', gateway) or '.' not in gateway:
+        raise ValueError('Invalid gateway')
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    rtcp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    decoder = None
+    try:
+        for port in range(24000, 24100, 2):
+            try:
+                udp.bind(('0.0.0.0', port))
+                rtcp.bind(('0.0.0.0', port+1))
+                break
+            except OSError:
+                udp.close(); rtcp.close()
+                udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                rtcp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        else:
+            raise RuntimeError('No free probe ports')
+        udp.setblocking(False)
+        client.connect()
+        uri = f'sip:MHT@{gateway}'
+        identity = f'<sip:{client.username}@{lib.DOMAIN}>'
+        call = uuid.uuid4().hex + '@camera-probe'
+        tag = uuid.uuid4().hex
+        branch = 'z9hG4bK' + uuid.uuid4().hex
+        cseq = 1
+        local_material = os.urandom(30)
+        feedback_ssrc = int.from_bytes(os.urandom(4), 'big')
+        body = offer(client.local_ip, port, rows[args.candidate-1],
+                     base64.b64encode(local_material).decode())
+        def request(method, target, to, seq, via_branch, content='', auth=None, routes=()):
+            lines = [f'{method} {target} SIP/2.0',
+                     f'Via: SIP/2.0/TLS {client.local_ip}:{client.local_port};branch={via_branch};rport',
+                     'Max-Forwards: 70', f'From: {identity};tag={tag}',
+                     f'To: {to}', f'Call-ID: {call}', f'CSeq: {seq} {method}',
+                     f'Contact: <sip:{client.username}@{client.local_ip}:{client.local_port};transport=tls>']
+            lines.extend('Route: '+r for r in routes)
+            if auth:
+                lines.append(auth)
+            if content:
+                lines.append('Content-Type: application/sdp')
+            return '\r\n'.join(lines + [f'Content-Length: {len(content.encode())}', '', content])
+        client.send(request('INVITE', uri, f'<{uri}>', cseq, branch, body))
+        deadline = time.monotonic()+20
+        accepted = False
+        cancelled = False
+        packets = 0
+        finished = False
+        while time.monotonic() < deadline:
+            if not accepted and not cancelled and (stopping or time.monotonic() > deadline-5):
+                client.send(request('CANCEL', uri, f'<{uri}>', cseq, branch))
+                cancelled = True
+            try:
+                data = udp.recv(65535)
+                if len(data) >= 12 and data[0] >> 6 == 2:
+                    packets += 1
+            except BlockingIOError:
+                pass
+            try:
+                raw = client.stream.read_message(timeout=0.2)
+            except socket.timeout:
+                continue
+            headers, _ = lib.sip_headers(raw)
+            if headers.get('call-id') != call:
+                continue
+            code = lib.status_code(raw)
+            if code is None:
+                client.respond_basic(raw, 200 if lib.sip_first_line(raw).startswith('BYE ') else 501, 'OK')
+                if lib.sip_first_line(raw).startswith('BYE '):
+                    break
+                continue
+            if headers.get('cseq', '').endswith('BYE') and code == 200:
+                finished = True
+                break
+            if not headers.get('cseq', '').endswith('INVITE'):
+                continue
+            print(f'SIP_STATUS={code}', flush=True)
+            if code in (183, 200):
+                print(video_summary(raw), flush=True)
+            to = headers.get('to', f'<{uri}>')
+            if code < 200:
+                continue
+            if code >= 300:
+                client.send(request('ACK', uri, to, cseq, branch))
+                if code in (401, 407) and cseq == 1 and not cancelled:
+                    challenge = lib.parse_digest_challenge(headers.get('www-authenticate') or headers.get('proxy-authenticate'))
+                    auth = lib.digest_authorization(username=client.username, password=client.password,
+                        method='INVITE', uri=uri, challenge=challenge)
+                    cseq += 1
+                    branch = 'z9hG4bK'+uuid.uuid4().hex
+                    label = 'Proxy-Authorization' if code == 407 else 'Authorization'
+                    client.send(request('INVITE', uri, f'<{uri}>', cseq, branch, body, label+': '+auth))
+                    continue
+                finished = True
+                break
+            contact = headers.get('contact', '')
+            match = re.search(r'<([^>]+)>', contact)
+            target = match.group(1) if match else contact.strip() or uri
+            routes = [line.split(':', 1)[1].strip() for line in raw.decode('utf-8', 'replace').splitlines()
+                      if line.lower().startswith('record-route:')][::-1]
+            client.send(request('ACK', target, to, cseq, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
+            if not accepted:
+                accepted = True
+                if (args.decode_frame or args.stream) and not cancelled:
+                    try:
+                        decoder = FrameDecoder(lib, client, raw, stream=args.stream)
+                        time.sleep(0.5)
+                    except Exception as exc:
+                        print(f'DECODER_START_FAILED={type(exc).__name__}', flush=True)
+                if args.prime_udp:
+                    try:
+                        prime_media(udp, rtcp, media_destinations(raw))
+                        print('UDP_PRIME sent=True', flush=True)
+                    except (ValueError, OSError, IndexError, TypeError):
+                        print('UDP_PRIME sent=False (destinazione non supportata o invio fallito)', flush=True)
+                # Keep the accepted session briefly to count encrypted RTP.
+                finish = time.monotonic()+(0 if cancelled else (args.duration if args.stream else (10 if args.decode_frame else 5)))
+                next_signal_poll = time.monotonic()
+                next_media_report = time.monotonic()+10
+                remote_ended = False
+                feedback_index = 0
+                next_feedback = 0
+                destinations = media_destinations(raw)
+                while time.monotonic() < finish and not stopping:
+                    try:
+                        data = udp.recv(65535)
+                        if len(data) >= 12 and data[0] >> 6 == 2:
+                            packets += 1
+                            if decoder:
+                                decoder.feed(data)
+                            if args.rtcp_feedback and time.monotonic() >= next_feedback:
+                                feedback = lib.make_srtcp_pli(local_material, feedback_ssrc,
+                                    int.from_bytes(data[8:12], 'big'), feedback_index)
+                                rtcp.sendto(feedback, destinations[1])
+                                feedback_index += 1
+                                next_feedback = time.monotonic()+5
+                                print(f'SRTCP_FEEDBACK sent={feedback_index}', flush=True)
+                    except BlockingIOError:
+                        time.sleep(0.02)
+                    now = time.monotonic()
+                    if now >= next_media_report:
+                        print(f'MEDIA_PROGRESS rtp_packets={packets} decoder_running={decoder is not None and decoder.process.poll() is None}', flush=True)
+                        next_media_report = now+10
+                    if now >= next_signal_poll:
+                        next_signal_poll = now+0.2
+                        try:
+                            incoming = client.stream.read_message(timeout=0.001)
+                        except socket.timeout:
+                            continue
+                        incoming_headers, _ = lib.sip_headers(incoming)
+                        if incoming_headers.get('call-id') != call:
+                            continue
+                        method = lib.sip_first_line(incoming).split(' ', 1)[0]
+                        if method == 'BYE':
+                            client.respond_basic(incoming, 200, 'OK')
+                            print('REMOTE_BYE received=True', flush=True)
+                            finished = remote_ended = True
+                            break
+                        if method == 'OPTIONS':
+                            client.respond_basic(incoming, 200, 'OK')
+                            print('REMOTE_OPTIONS answered=True', flush=True)
+                        elif method in ('INVITE', 'UPDATE'):
+                            # Do not silently ignore a mid-dialog refresh.
+                            print(f'REMOTE_REFRESH method={method}', flush=True)
+                            client.respond_basic(incoming, 501, 'Not Implemented')
+                if remote_ended:
+                    break
+                client.send(request('BYE', target, to, cseq+1, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
+                deadline = time.monotonic()+5
+        print(f'PROBE accepted={accepted} rtp_packets={packets} cancel_sent={cancelled} termination_confirmed={finished}')
+        print('Prova isolata: non conferma HomeKit live.')
+    finally:
+        if decoder:
+            decoder.close()
+            valid = decoder.frame.exists() and decoder.frame.stat().st_size > 0
+            print(f'FRAME_SAVED={valid}')
+            if valid:
+                print(f'Fotogramma privato: {decoder.frame}')
+        udp.close(); rtcp.close()
+        if client.sock:
+            client.sock.close()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as exc:
+        print(f'PROBE_ERROR={type(exc).__name__} (dettagli privati omessi)')
+        raise SystemExit(1)

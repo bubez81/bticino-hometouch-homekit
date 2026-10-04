@@ -1,0 +1,20 @@
+{
+  "pluginAlias": "BTicinoHOMETOUCH",
+  "pluginType": "accessory",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string", "default": "BTicino HOMETOUCH"},
+      "configPath": {"type": "string", "minLength": 1},
+      "listenerPath": {"type": "string", "minLength": 1}
+      ,"ipcSocket": {"type": "string", "minLength": 1}
+      ,"candidate": {"type": "string", "pattern": "^[1-4]$"}
+      ,"enableHapLive": {"type": "boolean", "default": false}
+      ,"enableCamera": {"type": "boolean", "default": false}
+      ,"enableTwoWayAudio": {"type": "boolean", "default": false}
+      ,"enableCallUnlock": {"type": "boolean", "default": false}
+      ,"separateCallUnlock": {"type": "boolean", "default": false}
+    },
+    "additionalProperties": false
+  }
+}

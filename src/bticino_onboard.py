@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import getpass
+import gzip
 import io
 import json
 import os
@@ -25,15 +27,26 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 
 DEFAULT_PORTAL = "https://www.myhomeweb.com"
 PROJECT_NAME = "MHT"
 APP_VERSION = "doorentryforhometouch-android-legacy-1.5.1"
 KNOWN_HOMETOUCH_SIP_LIMIT = 20
+KNOWN_CONFIGURATION_MEMBERS = (
+    "archive.xml",
+    "conf.xml",
+    "layout.xml",
+    "manifest.xml",
+)
+MAX_CONFIGURATION_MEMBER_BYTES = 8 * 1024 * 1024
+# Format constant used by the official client, not an account credential.
+CONFIGURATION_ZIP_PASSWORD = b"mhpG_123!"
 
 
 class OnboardingError(RuntimeError):
@@ -101,13 +114,150 @@ def payload_shape(value: Any) -> str:
     return type(value).__name__
 
 
+def xml_structure(raw: bytes) -> str:
+    """Describe XML names and counts without exposing any element values."""
+    if len(raw) > MAX_CONFIGURATION_MEMBER_BYTES:
+        raise OnboardingError("File XML di configurazione troppo grande")
+    start = raw.find(b"<")
+    if start < 0:
+        raise OnboardingError("File XML di configurazione non riconosciuto")
+    try:
+        root = ElementTree.fromstring(raw[start:])
+    except ElementTree.ParseError as exc:
+        raise OnboardingError("File XML di configurazione non valido") from exc
+
+    def safe_name(value: str) -> str:
+        local = value.rsplit("}", 1)[-1]
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.:-]{0,63}", local):
+            return "<nome-non-standard>"
+        return local
+
+    tags = Counter(safe_name(element.tag) for element in root.iter())
+    attributes = sorted({safe_name(name) for element in root.iter()
+                         for name in element.attrib})
+    tag_summary = ",".join(f"{name}:{count}" for name, count in sorted(tags.items()))
+    attribute_summary = ",".join(attributes) if attributes else "nessuno"
+    return f"tag=[{tag_summary}]; attributi=[{attribute_summary}]"
+
+
+def configuration_members(blob: bytes) -> dict[str, bytes]:
+    """Inspect only fixed configuration members and never return their values."""
+    archive_bytes = blob
+    if not zipfile.is_zipfile(io.BytesIO(archive_bytes)):
+        candidates: list[bytes] = [blob]
+        try:
+            candidates.append(gzip.decompress(blob))
+        except OSError:
+            pass
+        for candidate in candidates:
+            try:
+                encoded = b"".join(candidate.split())
+                decoded = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                continue
+            if zipfile.is_zipfile(io.BytesIO(decoded)):
+                archive_bytes = decoded
+                break
+        else:
+            try:
+                payload = payload_json(blob)
+            except OnboardingError:
+                payload = None
+            if not isinstance(payload, str):
+                raise OnboardingError("Payload configurazione non riconosciuto")
+            try:
+                encoded = "".join(payload.split()).encode("ascii")
+                archive_bytes = base64.b64decode(encoded, validate=True)
+            except (UnicodeEncodeError, ValueError, binascii.Error) as exc:
+                raise OnboardingError("Payload configurazione non riconosciuto") from exc
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(archive_bytes))
+    except zipfile.BadZipFile as exc:
+        raise OnboardingError("Archivio configurazione non riconosciuto") from exc
+    if any(info.compress_type == 99 for info in archive.infolist()):
+        archive.close()
+        try:
+            import pyzipper
+        except ImportError as exc:
+            raise OnboardingError(
+                "Configurazione ZIP AES: installare requirements-onboarding.txt "
+                "nell’ambiente Python usato dal comando"
+            ) from exc
+        archive = pyzipper.AESZipFile(io.BytesIO(archive_bytes))
+    by_basename = {Path(name).name: name for name in archive.namelist()}
+    result = {}
+    for basename in KNOWN_CONFIGURATION_MEMBERS:
+        member = by_basename.get(basename)
+        if member is None:
+            continue
+        info = archive.getinfo(member)
+        if info.file_size > MAX_CONFIGURATION_MEMBER_BYTES:
+            raise OnboardingError("File di configurazione troppo grande")
+        try:
+            content = archive.read(member, pwd=CONFIGURATION_ZIP_PASSWORD)
+        except (RuntimeError, ValueError, NotImplementedError, zipfile.BadZipFile) as exc:
+            raise OnboardingError("Decifratura o verifica archivio configurazione fallita") from exc
+        result[basename] = content
+    archive.close()
+    return result
+
+
+def configuration_structure(blob: bytes) -> list[str]:
+    members = configuration_members(blob)
+    return [f"{name}: {xml_structure(members[name])}" if name in members
+            else f"{name}=assente" for name in KNOWN_CONFIGURATION_MEMBERS]
+
+
+def camera_candidates(blob: bytes) -> list[dict[str, str]]:
+    """Extract private candidates; never infer an entrance from order or name."""
+    members = configuration_members(blob)
+    candidates = []
+    def add(cid, dev, address, source):
+        if cid not in ("10050", "10061"):
+            return
+        if not re.fullmatch(r"[0-9]", dev or "") or not re.fullmatch(r"[0-9]{1,12}", address or ""):
+            return
+        row = {"cid": cid, "dev": dev, "address": address,
+               "devaddr": dev + address, "source": source}
+        if not any(c["devaddr"] == row["devaddr"] and c["cid"] == cid for c in candidates):
+            candidates.append(row)
+    for name, data in members.items():
+        if name not in ("archive.xml", "conf.xml"):
+            continue
+        if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
+            raise OnboardingError("Dichiarazioni XML non supportate")
+        try:
+            root = ElementTree.fromstring(data)
+        except ElementTree.ParseError as exc:
+            raise OnboardingError("Configurazione XML non valida") from exc
+        if name == "archive.xml":
+            for node in root.iter("obj"):
+                add(node.get("cid"), node.get("dev"), node.get("where"), name)
+        else:
+            default = root.find("./setup/vdes/communication/p_default")
+            if default is not None:
+                add("10050", default.findtext("dev"), default.findtext("address"), name)
+    return candidates
+
+
 @dataclass
 class CloudResponse:
     body: bytes
     headers: Any
+    status: int | None = None
+
+    def diagnostic(self) -> str:
+        # Only fixed labels are exposed: headers and bodies can contain secrets.
+        media = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+        known = {"application/json", "text/json", "text/html", "text/plain", "application/octet-stream"}
+        content_type = media if media in known else ("altro" if media else "assente")
+        return f"HTTP {self.status if isinstance(self.status, int) else 'sconosciuto'}; tipo={content_type}; byte={len(self.body)}"
 
     def json(self) -> Any:
-        return payload_json(self.body)
+        try:
+            return payload_json(self.body)
+        except OnboardingError as exc:
+            raise OnboardingError("Risposta cloud non valida (" + self.diagnostic() + ")") from exc
 
 
 class EliotClient:
@@ -139,7 +289,7 @@ class EliotClient:
         )
         try:
             with self.opener.open(req, timeout=self.timeout) as response:
-                result = CloudResponse(response.read(), response.headers)
+                result = CloudResponse(response.read(), response.headers, response.status)
         except urllib.error.HTTPError as exc:
             raw_detail = exc.read(512)
             detail = raw_detail.decode("utf-8", "replace")
@@ -195,6 +345,13 @@ class EliotClient:
     def invitations(self) -> Any:
         return self.request("GET", "/eliot/invitations").json()
 
+    def plant_configuration(self, plant_id: str, gateway_id: str) -> bytes:
+        path = "/eliot/plants/{}/gateway/{}/conf".format(
+            urllib.parse.quote(plant_id, safe=""),
+            urllib.parse.quote(gateway_id, safe=""),
+        )
+        return self.request("GET", path, response_kind="binary").body
+
     def gateways(self, plant_id: str) -> list[dict[str, Any]]:
         path = "/eliot/plants/{}/gateway/".format(
             urllib.parse.quote(plant_id, safe="")
@@ -217,11 +374,21 @@ class EliotClient:
         return [item for item in value if isinstance(item, dict)]
 
     def create_sip_account(self, account: dict[str, str]) -> dict[str, Any]:
-        value = self.request("POST", "/eliot/sip/user", account).json()
+        try:
+            response = self.request("POST", "/eliot/sip/user", account, response_kind="binary")
+            value = response.json()
+        except OnboardingError as exc:
+            raise OnboardingError(
+                f"Creazione endpoint SIP: {exc}. Esito della creazione non confermato; "
+                "non ripetere --apply. Verificare prima gli endpoint con un comando senza --apply."
+            ) from exc
         if isinstance(value, list) and value:
             value = value[0]
         if not isinstance(value, dict):
-            raise OnboardingError("Account SIP restituito in formato inatteso")
+            raise OnboardingError(
+                "Account SIP restituito in formato inatteso (" + response.diagnostic() +
+                "). Esito della creazione non confermato; non ripetere --apply."
+            )
         return value
 
     def sign_certificate(self, common_name: str, csr: str) -> bytes:
@@ -383,6 +550,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plant-id")
     parser.add_argument("--device-name", default="Home Assistant Bridge")
     parser.add_argument("--device-id", help="ID esadecimale persistente di 12 caratteri")
+    parser.add_argument("--reuse-endpoint", metavar="NOME", help="riutilizza un endpoint con questo nome esatto, senza crearne uno nuovo")
     default_config_root = Path(
         os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
     ) / "bticino-hometouch"
@@ -398,6 +566,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--diagnose-discovery", action="store_true",
         help="mostra solo la forma delle risposte impianti/inviti, senza valori",
     )
+    parser.add_argument(
+        "--diagnose-activations", action="store_true",
+        help="mostra solo tag e attributi della configurazione, senza valori",
+    )
+    parser.add_argument("--export-camera-candidates", action="store_true",
+                        help="salva candidati video privati, senza inviare comandi SIP")
     return parser
 
 
@@ -440,6 +614,24 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Impianto: {plant.get('PlantName', 'Senza nome')}")
     print(f"Gateway: {redact(gateway_id)}")
 
+    if args.export_camera_candidates:
+        candidates = camera_candidates(client.plant_configuration(plant_id, gateway_id))
+        if not candidates:
+            raise OnboardingError("Nessun candidato video con indirizzo esplicito riconosciuto")
+        args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
+        atomic_private_json(args.output / "camera-candidates.json",
+                            {"version": 1, "candidates": candidates})
+        print(f"Candidati video salvati privatamente: {len(candidates)}. Nessun comando SIP inviato.")
+        return 0
+    if args.diagnose_activations:
+        configuration = client.plant_configuration(plant_id, gateway_id)
+        print("Diagnosi attivazioni (nessun valore mostrato):")
+        for structure in configuration_structure(configuration):
+            print(f"  {structure}")
+        print(f"Candidati video con indirizzo esplicito: {len(camera_candidates(configuration))}")
+        print("Diagnosi completata. Nessuna modifica eseguita.")
+        return 0
+
     accounts = client.sip_accounts(plant_id, gateway_id)
     provisioned, pending = split_sip_records(accounts)
     print(f"Endpoint SIP provisionati: {len(provisioned)}")
@@ -447,7 +639,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Utenti senza endpoint SIP: {len(pending)}")
     if args.list_endpoints:
         for index, account in enumerate(provisioned, 1):
-            print(f"  {index:2}. {endpoint_summary(account)}")
+            password_state = "presente" if isinstance(account.get("SipPassword"), str) and account["SipPassword"].strip() else "assente"
+            print(f"  {index:2}. {endpoint_summary(account)} — password SIP nel GET: {password_state}")
         for index, account in enumerate(pending, len(provisioned) + 1):
             print(f"  {index:2}. IN ATTESA — {endpoint_summary(account)}")
     if args.probe_removal is not None:
@@ -489,28 +682,42 @@ def main(argv: list[str] | None = None) -> int:
         print("Ripetere con --apply soltanto dopo aver verificato account e impianto.")
         return 0
 
-    if len(provisioned) >= KNOWN_HOMETOUCH_SIP_LIMIT:
+    if args.reuse_endpoint:
+        matches = [a for a in provisioned if a.get("DeviceName") == args.reuse_endpoint]
+        if len(matches) != 1:
+            raise OnboardingError("Recupero richiede esattamente un endpoint con il nome indicato")
+        recovered = matches[0]
+        if not isinstance(recovered.get("SipPassword"), str) or not recovered["SipPassword"].strip():
+            raise OnboardingError("Password SIP non recuperabile; nessuna creazione tentata")
+        if args.device_id:
+            raise OnboardingError("Non combinare --device-id con --reuse-endpoint")
+        if args.output.resolve().exists() and any(args.output.resolve().iterdir()):
+            raise OnboardingError("Per il recupero scegliere una directory --output nuova o vuota")
+    else:
+        recovered = None
+
+    if recovered is None and len(provisioned) >= KNOWN_HOMETOUCH_SIP_LIMIT:
         raise OnboardingError(
             f"Impianto pieno: {len(provisioned)}/{KNOWN_HOMETOUCH_SIP_LIMIT} "
             "endpoint SIP. Nessuna creazione tentata; liberare uno slot tramite "
             "assistenza BTicino o rimuovendo un utente dell’impianto non più usato."
         )
 
-    device_id = (args.device_id or secrets.token_hex(6)).upper()
+    device_id = str(recovered["IdDevice"]) if recovered else (args.device_id or secrets.token_hex(6)).upper()
     if not re.fullmatch(r"[0-9A-F]{12}", device_id):
         raise OnboardingError("--device-id deve contenere 12 caratteri esadecimali")
     local_part = email.replace("@", "-")
-    sip_account = f"{local_part}-{device_id}@{gateway_id}.bs.iotleg.com"
+    sip_account = str(recovered["SipAccount"]) if recovered else f"{local_part}-{device_id}@{gateway_id}.bs.iotleg.com"
     request_account = {
         "SipAccount": sip_account,
         "DeviceName": args.device_name,
         "GatewayId": gateway_id,
         "IdDevice": device_id,
     }
-    print("Creazione endpoint SIP dedicato…")
-    created = client.create_sip_account(request_account)
+    print("Recupero endpoint SIP esistente…" if recovered else "Creazione endpoint SIP dedicato…")
+    created = recovered if recovered else client.create_sip_account(request_account)
     # Some service versions return the account only on the subsequent GET.
-    refreshed = client.sip_accounts(plant_id, gateway_id)
+    refreshed = [] if recovered else client.sip_accounts(plant_id, gateway_id)
     matches = [a for a in refreshed if a.get("SipAccount") == sip_account]
     # Preserve one-time values, notably a SIP password returned only by POST.
     account = {**created, **matches[0]} if matches else created

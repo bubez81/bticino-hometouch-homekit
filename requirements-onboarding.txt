@@ -1,0 +1,2 @@
+# Optional support for AES-encrypted HOMETOUCH configuration archives.
+pyzipper==0.3.6

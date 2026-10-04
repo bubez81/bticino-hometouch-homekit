@@ -33,12 +33,20 @@ python=$(resolve_program "${BTICINO_PYTHON:-}" python3 \
 }
 generated_config=${BTICINO_CONFIG:-}
 candidate=${1:-"$script_dir/../src/bticino_hometouch_listener.py"}
+probe_candidate="$script_dir/probe-camera.py"
+wrapper_candidate="$script_dir/homekit-live-wrapper.sh"
+modules="bticino_audio_offer bticino_incoming_dialog bticino_homekit_call bticino_call_unlock bticino_signaling_observation bticino_ipc"
 plist_candidate="$script_dir/../packaging/$service_label.plist"
 validator="$script_dir/validate_config.py"
 backup="$base/backups/$(date +%Y-%m-%d_%H-%M-%S)"
 
 test "$(id -u)" -eq 0 || { echo "Eseguire con sudo" >&2; exit 1; }
 test -f "$candidate"
+test -f "$probe_candidate"
+test -f "$wrapper_candidate"
+for module in $modules; do
+    test -f "$script_dir/../src/$module.py"
+done
 test -f "$plist_candidate"
 test -f "$validator"
 test -x "$python"
@@ -52,6 +60,12 @@ fi
 "$python" -m py_compile "$candidate"
 mkdir -p "$backup"
 chmod 700 "$base/backups" "$backup"
+for name in $modules; do
+    test ! -f "$base/$name.py" || cp -p "$base/$name.py" "$backup/$name.py"
+done
+for name in probe-camera.py homekit-live-wrapper.sh; do
+    test ! -f "$base/$name" || cp -p "$base/$name" "$backup/$name"
+done
 if test -f "$base/listener.py"; then
     cp -p "$base/listener.py" "$backup/listener.py"
 fi
@@ -74,6 +88,20 @@ rollback() {
     status=$?
     if test "$status" -ne 0; then
         echo "Installazione non riuscita; ripristino $backup/listener.py" >&2
+        for module in $modules; do
+            if test -f "$backup/$module.py"; then
+                cp -p "$backup/$module.py" "$base/$module.py"
+            else
+                rm -f "$base/$module.py"
+            fi
+        done
+        for name in probe-camera.py homekit-live-wrapper.sh; do
+            if test -f "$backup/$name"; then
+                cp -p "$backup/$name" "$base/$name"
+            else
+                rm -f "$base/$name"
+            fi
+        done
         if test -f "$backup/listener.py"; then
             cp -p "$backup/listener.py" "$base/listener.py"
         elif test "$had_listener" = false; then
@@ -100,6 +128,11 @@ rollback() {
 trap rollback EXIT HUP INT TERM
 
 install -o root -g wheel -m 700 "$candidate" "$base/listener.py"
+for module in $modules; do
+    install -o root -g wheel -m 600 "$script_dir/../src/$module.py" "$base/$module.py"
+done
+install -o root -g wheel -m 700 "$probe_candidate" "$base/probe-camera.py"
+install -o root -g wheel -m 700 "$wrapper_candidate" "$base/homekit-live-wrapper.sh"
 ln -sfn "$python" "$base/python3"
 chown -h root:wheel "$base/python3"
 install -o root -g wheel -m 644 "$plist_candidate" "$plist"

@@ -10,6 +10,8 @@ import secrets
 import select
 import shutil
 import signal
+import threading
+import grp
 import socket
 import ssl
 import subprocess
@@ -22,6 +24,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import urlopen
+from bticino_incoming_dialog import IncomingDialog
+from bticino_audio_offer import parse_audio_offer
+from bticino_homekit_call import CallCommands, MediaAttachment
+from bticino_call_unlock import open_current_call
+from bticino_signaling_observation import observe as observe_signaling
 
 
 def load_public_config():
@@ -59,7 +66,12 @@ RUNTIME_DIR = BASE / "runtime"
 DIAGNOSTIC_KEY_FILE = RUNTIME_DIR / "diagnostic-hmac.key"
 FFMPEG = resolve_executable(
     "ffmpeg", "BTICINO_FFMPEG", "ffmpeg",
-    ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"),
+    (
+        "/opt/homebrew/opt/ffmpeg/bin/ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+    ),
 )
 OPENSSL = resolve_executable(
     "openssl", "BTICINO_OPENSSL", "openssl",
@@ -111,6 +123,7 @@ PENDING_LOCK = threading.Lock()
 DIAGNOSTIC_KEY = None
 DIAGNOSTIC_KEY_LOCK = threading.Lock()
 ENTRANCE_PROFILES = {}
+IPC_MODULE = None
 FALLBACK_PROCESS = None
 FALLBACK_LOCK = threading.Lock()
 
@@ -400,6 +413,11 @@ def latest_snapshot():
     return max(snapshots, key=lambda p: p.stat().st_mtime, default=None)
 
 
+def notify_ipc_ring(snapshot=None, entrance=None):
+    if IPC_MODULE is not None:
+        IPC_MODULE.handle_request({"command": "notify_ring", "snapshot": str(snapshot) if snapshot else None, "entrance": entrance})
+
+
 def set_snapshot_pending(call_id, pending):
     with PENDING_LOCK:
         if pending:
@@ -621,6 +639,19 @@ class SIPStream:
         raw = self.buffer[:total_len]
         self.buffer = self.buffer[total_len:]
 
+        # Observe before register/dialog/request dispatch: subsequent SDP and
+        # responses must not disappear behind method-specific early returns.
+        if CONFIG.get('entrance_signaling_diagnostics') is True:
+            try:
+                candidate_path = BASE / 'camera-candidates.json'
+                candidates = json.loads(candidate_path.read_text()).get('candidates', []) if candidate_path.exists() else []
+                record = observe_signaling(raw, diagnostic_key(), candidates)
+                if record is not None:
+                    log('ENTRANCE SIGNAL v2: ' + json.dumps(record, separators=(',', ':')))
+            except Exception:
+                # Diagnostics must never break a call or print raw SIP data.
+                log('ENTRANCE SIGNAL v2: observation unavailable')
+
         return raw
 
 
@@ -802,6 +833,8 @@ class EarlyMediaCapture:
         self.remote_rtcp_port = remote_rtcp_port
         self.audio_key = base64.b64encode(os.urandom(30)).decode("ascii")
         self.audio_sockets = []
+        self.attachment = None
+        self.two_way_enabled = CONFIG.get('incoming_audio') is True or os.environ.get('BTICINO_INCOMING_AUDIO') == '1'
         self.audio_packets = 0
         self.answer_key = base64.b64encode(os.urandom(30)).decode("ascii")
         self.process = None
@@ -815,6 +848,7 @@ class EarlyMediaCapture:
         self.snapshot_reported = False
         self.classification_reported = False
         self.started = time.time()
+        self.sdp_session_id = int(self.started * 1000)
         self.snapshot = SNAPSHOT_DIR / (
             f"{stamp()}_{re.sub(r'[^A-Za-z0-9_.-]', '_', call_id)[:60]}.jpg"
         )
@@ -847,8 +881,8 @@ class EarlyMediaCapture:
                     f"a=rtpmap:{self.audio['payload']} {self.audio['rtpmap']}\r\n"
                     "a=rtcp-fb:* trr-int 5000\r\n"
                     "a=rtcp-fb:* ccm tmmbr\r\n"
-                    "a=recvonly\r\n"
-                    f"a=crypto:{self.audio['crypto_tag']} AES_CM_128_HMAC_SHA1_80 "
+                    + ("a=sendrecv\r\n" if self.two_way_enabled and self.audio.get('can_talk') else "a=recvonly\r\n")
+                    + f"a=crypto:{self.audio['crypto_tag']} AES_CM_128_HMAC_SHA1_80 "
                     f"inline:{self.audio_key}\r\n"
                 )
             elif kind == "video" and not video_inserted:
@@ -858,7 +892,7 @@ class EarlyMediaCapture:
                 media.append(f"m={kind} 0 {proto} {' '.join(payloads)}\r\n")
         return (
             "v=0\r\n"
-            f"o=bticino-sniffer {int(time.time())} 1 IN IP4 {self.local_ip}\r\n"
+            f"o=bticino-sniffer {self.sdp_session_id} 1 IN IP4 {self.local_ip}\r\n"
             "s=Early media snapshot\r\n"
             f"c=IN IP4 {self.local_ip}\r\n"
             "t=0 0\r\n"
@@ -942,10 +976,14 @@ class EarlyMediaCapture:
         for sock in self.audio_sockets:
             while True:
                 try:
-                    sock.recvfrom(65535)
+                    packet, peer = sock.recvfrom(65535)
                     self.audio_packets += 1
+                    if self.attachment and peer[0] == self.audio['address']:
+                        self.attachment.forward('audio', self.audio_sockets.index(sock), packet)
                 except BlockingIOError:
                     break
+        if self.attachment:
+            self.attachment.poll_return()
         if (not self.classification_reported
                 and self.classification_path.exists()
                 and self.classification_path.stat().st_size > 0):
@@ -1040,6 +1078,8 @@ class EarlyMediaCapture:
                         self.send_pli(ssrc)
                 try:
                     self.relay_sender.sendto(packet, destinations[sock])
+                    if self.attachment:
+                        self.attachment.forward('video', self.relay_sockets.index(sock), packet)
                 except OSError:
                     pass
 
@@ -1084,6 +1124,9 @@ class EarlyMediaCapture:
             self.relay_sender = None
 
     def close_audio(self):
+        if self.attachment:
+            self.attachment.close()
+            self.attachment = None
         for sock in self.audio_sockets:
             try:
                 sock.close()
@@ -1119,6 +1162,52 @@ class HomtouchListener:
         self.next_refresh = 0
         self.media = {}
         self.dialog_tags = {}
+        self.incoming_dialogs = {}
+        self.call_commands = CallCommands(self.handle_call_command)
+
+    def handle_call_command(self, request):
+        owner = request.get('session_id')
+        command = request['command']
+        if command == 'open_incoming':
+            return open_current_call(self, owner, CONFIG.get('incoming_unlock', False), DOMAIN)
+        if command == 'attach_incoming':
+            if len(self.incoming_dialogs) != 1:
+                return {'ok': False, 'error': 'no_unique_incoming_call'}
+            call_id, dialog = next(iter(self.incoming_dialogs.items()))
+            capture = self.media[call_id]
+            if not capture.two_way_enabled or not capture.audio or not capture.audio.get('can_talk'):
+                return {'ok': False, 'error': 'incoming_audio_not_negotiated'}
+            if capture.attachment:
+                return {'ok': False, 'error': 'incoming_call_owned'}
+            capture.attachment = MediaAttachment(capture, owner, request.get('video_port'), request.get('audio_port'))
+            return capture.attachment.description()
+        for call_id, capture in list(self.media.items()):
+            attachment = capture.attachment
+            if not attachment or attachment.owner != owner:
+                continue
+            dialog = self.incoming_dialogs[call_id]
+            if command == 'answer_incoming':
+                if type(request.get('enabled')) is not bool:
+                    return {'ok': False, 'error': 'invalid_talk_state'}
+                if not request['enabled']:
+                    attachment.allowed = False
+                    if request.get('answer') is True:
+                        dialog.answer(owner, capture.answer_sdp, audio_ready=True)
+                        self.publish_incoming_state()
+                    return {'ok': True}
+                # This command is sent only after the plugin's audio decoders
+                # have been prepared and the HomeKit speaker is unmuted.
+                dialog.answer(owner, capture.answer_sdp, audio_ready=True)
+                attachment.allowed = True
+                self.publish_incoming_state()
+                return {'ok': True}
+            if command == 'release_incoming':
+                if dialog.state in ('answered', 'established'):
+                    dialog.hangup(owner)
+                attachment.close()
+                capture.attachment = None
+                return {'ok': True}
+        return {'ok': False, 'error': 'session_mismatch'}
 
 
     def connect(self):
@@ -1452,8 +1541,36 @@ class HomtouchListener:
     def start_early_media(self, raw):
         headers, _ = sip_headers(raw)
         call_id = headers.get("call-id", uuid.uuid4().hex)
+        existing = self.media.get(call_id)
+        if existing is not None:
+            # Retransmitted INVITEs must not replace a live receiver or ring twice.
+            dialog = self.incoming_dialogs.get(call_id)
+            if dialog and dialog.answer_packet:
+                self.send(dialog.answer_packet)
+            else:
+                self.respond_basic(raw, 183, "Session Progress",
+                                   self.dialog_tags[call_id], existing.answer_sdp)
+            return
+        to_tag = self.dialog_tags.setdefault(call_id, token(8))
+        dialog = IncomingDialog(
+            raw, f"<sip:{self.username}@{self.local_ip}:{self.local_port};transport=tls>",
+            self.send, to_tag=to_tag,
+        )
         (payload, fmtp, crypto_tag, remote_key, media_order, audio,
          remote_ip, remote_rtcp_port) = self.parse_video_offer(raw)
+        # Negotiate a codec the audio bridge can actually decode, not simply
+        # the first advertised codec (which may be unsupported G729).
+        try:
+            selected_audio = parse_audio_offer(sip_body(raw))
+        except ValueError:
+            selected_audio = None
+            log("Audio offerto non supportato; video mantenuto senza audio")
+        audio = None
+        if selected_audio and selected_audio['can_listen']:
+            codec = selected_audio['codec']
+            rtpmap = 'opus/48000/2' if codec == 'OPUS' else f'{codec}/8000'
+            audio = dict(selected_audio, rtpmap=rtpmap,
+                         remote_key=base64.b64encode(selected_audio['material']).decode('ascii'))
         local_port = reserve_udp_pair(self.local_ip)
         internal_port = reserve_udp_pair(
             "127.0.0.1", start=INTERNAL_MEDIA_PORT_START,
@@ -1477,6 +1594,12 @@ class HomtouchListener:
             capture.cleanup_files()
             raise RuntimeError(f"FFmpeg non ha aperto RTP: {error}")
         self.media[call_id] = capture
+        self.incoming_dialogs[call_id] = dialog
+        self.publish_incoming_state()
+        if IPC_MODULE is not None:
+            notify_ipc_ring(capture.snapshot)
+            log("HOMEKIT IPC: suonata accodata senza attendere lo snapshot")
+            IPC_MODULE.handle_request({"command": "notify_media", "call_id": call_id, "rtp_port": local_port, "rtcp_port": local_port + 1})
         to_tag = self.dialog_tags.setdefault(call_id, token(8))
         self.respond_basic(raw, 183, "Session Progress", to_tag, capture.answer_sdp)
         log(
@@ -1496,6 +1619,20 @@ class HomtouchListener:
             elif time.time() - capture.started > MEDIA_TIMEOUT + 5:
                 capture.stop("timeout")
                 self.media.pop(call_id, None)
+        for call_id in list(self.incoming_dialogs):
+            if call_id not in self.media:
+                self.incoming_dialogs.pop(call_id, None)
+                self.dialog_tags.pop(call_id, None)
+        self.publish_incoming_state()
+
+
+    def publish_incoming_state(self):
+        if IPC_MODULE is not None:
+            dialog = next(iter(self.incoming_dialogs.values()), None)
+            IPC_MODULE.set_incoming_state(
+                {"state": dialog.state, "audio_ready": False,
+                 "two_way_available": self.media[dialog.call_id].two_way_enabled} if dialog else None
+            )
 
 
     def stop_media_for(self, raw, reason):
@@ -1504,6 +1641,9 @@ class HomtouchListener:
         capture = self.media.pop(call_id, None)
         if capture:
             capture.stop(reason)
+        self.incoming_dialogs.pop(call_id, None)
+        self.dialog_tags.pop(call_id, None)
+        self.publish_incoming_state()
 
 
     def save_raw(self, raw, kind):
@@ -1586,6 +1726,15 @@ class HomtouchListener:
 
         log(f"SIP RX: {method or 'UNKNOWN'}")
 
+        headers, _ = sip_headers(raw)
+        dialog = self.incoming_dialogs.get(headers.get("call-id", ""))
+        if dialog and method in ("CANCEL", "BYE", "ACK"):
+            dialog.receive(raw)
+            if dialog.state == "closed":
+                self.stop_media_for(raw, f"{method} ricevuto")
+            self.publish_incoming_state()
+            return
+
         if method == "INVITE":
             self.analyse_invite(raw)
             self.respond_basic(
@@ -1665,6 +1814,8 @@ class HomtouchListener:
     def loop(self):
         self.connect()
         self.register()
+        if IPC_MODULE is not None:
+            IPC_MODULE._incoming_commands = self.call_commands
 
         log(
             "Listener operativo. "
@@ -1672,6 +1823,8 @@ class HomtouchListener:
         )
 
         while RUNNING:
+
+            self.call_commands.drain()
 
             self.maintain_media()
 
@@ -1683,7 +1836,7 @@ class HomtouchListener:
 
             try:
                 raw = self.stream.read_message(
-                    timeout=5
+                    timeout=0.1
                 )
 
             except socket.timeout:
@@ -1692,6 +1845,13 @@ class HomtouchListener:
             first = sip_first_line(raw)
 
             if first.startswith("SIP/2.0"):
+                headers, _ = sip_headers(raw)
+                dialog = self.incoming_dialogs.get(headers.get('call-id', ''))
+                if dialog:
+                    dialog.receive(raw)
+                    if dialog.state == 'closed':
+                        self.stop_media_for(raw, 'dialogo concluso')
+                    continue
                 log(f"SIP response inattesa: {first}")
                 try:
                     path = self.save_raw(raw, "RESPONSE")
@@ -1704,9 +1864,15 @@ class HomtouchListener:
 
 
     def close(self):
+        self.call_commands.close()
+        if IPC_MODULE is not None and IPC_MODULE._incoming_commands is self.call_commands:
+            IPC_MODULE._incoming_commands = None
         for capture in list(self.media.values()):
             capture.stop("connessione SIP chiusa")
         self.media.clear()
+        self.incoming_dialogs.clear()
+        self.dialog_tags.clear()
+        self.publish_incoming_state()
         try:
             if self.sock:
                 self.sock.close()
@@ -1740,7 +1906,7 @@ signal.signal(
 
 
 def main():
-    global ENTRANCE_PROFILES
+    global ENTRANCE_PROFILES, IPC_MODULE
     validate_runtime_settings()
     BASE.mkdir(
         parents=True,
@@ -1757,6 +1923,21 @@ def main():
     os.chmod(SNAPSHOT_DIR, 0o700)
     os.chmod(RUNTIME_DIR, 0o700)
     ensure_placeholder_snapshot()
+    ipc_server = None
+    ipc_thread = None
+    if os.environ.get("BTICINO_IPC_ENABLED", "0") == "1":
+        import bticino_ipc
+        IPC_MODULE = bticino_ipc
+        bticino_ipc.SNAPSHOT_DIR = SNAPSHOT_DIR
+        ipc_server = bticino_ipc.IPCServer(str(bticino_ipc.SOCKET_PATH), bticino_ipc._Handler)
+        os.chmod(bticino_ipc.SOCKET_PATH, 0o660)
+        try:
+            os.chown(bticino_ipc.SOCKET_PATH, os.getuid(), grp.getgrnam("staff").gr_gid)
+        except (AttributeError, KeyError, PermissionError):
+            pass
+        ipc_thread = threading.Thread(target=ipc_server.serve_forever, name="bticino-ipc", daemon=True)
+        ipc_thread.start()
+        log(f"IPC locale attivo: {bticino_ipc.SOCKET_PATH}")
     if ENTRANCE_CLASSIFICATION_ENABLED:
         ENTRANCE_PROFILES = load_entrance_profiles()
         if len(ENTRANCE_PROFILES) < 2:
@@ -1806,6 +1987,10 @@ def main():
 
     snapshot_server.shutdown()
     snapshot_server.server_close()
+    if ipc_server is not None:
+        ipc_server.shutdown()
+        ipc_server.server_close()
+        bticino_ipc.SOCKET_PATH.unlink(missing_ok=True)
     stop_post_call_fallback("arresto listener")
     log("Listener terminato")
 

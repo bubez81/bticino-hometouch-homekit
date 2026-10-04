@@ -1,0 +1,20 @@
+'use strict';
+// Read installed config and instantiate the real plugin/HAP with IPC disabled.
+const assert=require('node:assert/strict');
+const root='/opt/bticino-homebridge';
+const hap=require('/usr/local/lib/node_modules/homebridge/node_modules/@homebridge/hap-nodejs');
+const config=require(root+'/config.json').accessories.find(x=>x.accessory==='BTicinoHOMETOUCH');
+assert.equal(config.enableCallUnlock,true);
+assert.equal(config.enableTwoWayAudio,true);
+require(root+'/plugin/ipc').request=async()=>{throw Error('offline verification');};
+let Accessory;
+const api={hap,on(){},registerAccessory(_p,_a,ctor){Accessory=ctor;}};
+require(root+'/plugin/index')(api);
+const log={info(){},warn(){},error(){},debug(){}};
+const instance=new Accessory(log,config,api);
+const lock=instance.getServices().find(s=>s.UUID===hap.Service.LockMechanism.UUID);
+assert(lock,'Missing LockMechanism');
+assert(!instance.getServices().some(s=>s.UUID===hap.Service.Switch.UUID));
+assert.equal(lock.getCharacteristic(hap.Characteristic.LockCurrentState).value,hap.Characteristic.LockCurrentState.UNKNOWN);
+assert.equal(instance.getControllers().length,1);
+console.log('INSTALLED_CONFIG_AND_HAP_LOCK_OK; physical state UNKNOWN; IPC disabled for verification');

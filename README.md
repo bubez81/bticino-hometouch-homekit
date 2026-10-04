@@ -19,8 +19,9 @@ forwards live video to Homebridge on the local loopback interface.
 
 > **Project status: experimental.** Incoming video works on the tested system.
 > Local entrance classification and post-call snapshot fallback are available
-> experimentally. On-demand activation, two-way audio and entrance-specific
-> opening controls are still under development.
+> experimentally. A dedicated Homebridge plugin now includes on-demand video,
+> incoming-call audio and contextual opening. Hardware validation is incomplete;
+> see the [October update](docs/update-2026-10.md) before enabling these features.
 
 ## Support the project
 
@@ -39,11 +40,12 @@ optional and do not include rewards or support services.
 | `100 Trying` / `183 Session Progress` without answering | Verified on one HOMETOUCH installation |
 | H.264 SRTP/SDES snapshot and short live early media | Verified on one HOMETOUCH installation |
 | HomeKit doorbell notification through Homebridge | Verified on one HOMETOUCH installation |
-| Creation of a fresh SIP endpoint and certificate | Implemented and simulated; live verification still required |
+| Creation/recovery of a SIP endpoint and certificate | Verified on one installation; empty HTTP 201 responses require recovery |
 | Continuous last-snapshot fallback after the incoming call ends | Implemented; broader HomeKit testing required |
 | Privacy-preserving multi-entrance classification | Implemented experimentally; requires local calibration |
-| True on-demand live video without an incoming call | Not implemented |
-| Two-way audio and entrance-specific opening controls | Not implemented |
+| On-demand video in the dedicated plugin | Experimental; source lifetime/reliability require further testing |
+| Incoming two-way audio | Implemented; full physical conversation test pending |
+| Contextual opening and separate HomeKit lock | Implemented, opt-in; correct physical entrance requires verification |
 
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
@@ -52,8 +54,8 @@ consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
 
 - No HOMETOUCH firmware modification.
 - No interception or modification of the existing gateway service.
-- No `200 OK` during the current early-media flow, so the bridge does not
-  answer the call.
+- Passive early-media viewing does not answer; the dedicated plugin's incoming
+  live flow can explicitly accept a call, with outgoing microphone audio gated.
 - Media exposed to Homebridge only through `127.0.0.1`.
 - Runtime captures and key material stored outside the repository with
   restrictive permissions.
@@ -85,9 +87,8 @@ copy credentials, certificates or application storage from a family member's
 phone.
 
 Its read-only discovery mode has been verified against a dedicated invited
-account. SIP endpoint and certificate creation are implemented but remain
-experimental until the complete mutating flow has been verified on an
-installation with a free endpoint slot. See
+account. Creation followed by existing-endpoint recovery, certificate generation
+and SIP registration has now been verified on one installation. See
 [`docs/onboarding.md`](docs/onboarding.md).
 
 Run the non-mutating check first:
@@ -179,6 +180,21 @@ When `post_call_fallback_seconds` is negative, the loopback video endpoint
 continues serving the most recent private snapshot after a call ends. This can
 prevent an older HomeKit notification from becoming blank, but it is not live
 video: true on-demand activation of the HOMETOUCH camera remains future work.
+
+The optional `--diagnose-activations` probe decrypts configuration archives in
+memory using the format password used by the official client (not your account
+password). It prints XML structure only, without saving the configuration or
+printing its values. AES archives require the optional onboarding dependency:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-onboarding.txt
+.venv/bin/python src/bticino_onboard.py --diagnose-activations
+```
+
+This read-only probe does not activate a camera. Validation on a real cloud
+configuration is still required; encrypted synthetic fixtures cover decoding
+and incorrect-password handling.
 
 The runtime directory and executable paths are configurable. The example uses
 `/opt/bticino-sniffer`; adapt `base_dir`, `ffmpeg` and `openssl` to the host.
