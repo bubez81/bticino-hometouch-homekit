@@ -33,6 +33,18 @@ class IpcTests(unittest.TestCase):
             process.wait.assert_called_once_with(timeout=8)
             process.kill.assert_not_called()
 
+    def test_entrance_commands_go_to_listener_queue(self):
+        commands = Mock()
+        commands.request.return_value = {'ok': True, 'state': 'sent_unconfirmed', 'entrance': 'scala'}
+        with patch.object(bticino_ipc, '_incoming_commands', commands):
+            result = bticino_ipc.handle_request({'command': 'open_entrance', 'entrance': 'scala'})
+            self.assertEqual(result['entrance'], 'scala')
+            commands.request.assert_called_once_with({'command': 'open_entrance', 'entrance': 'scala'})
+            bticino_ipc.handle_request({'command': 'entrance_status'})
+            self.assertEqual(commands.request.call_count, 2)
+        with patch.object(bticino_ipc, '_incoming_commands', None):
+            self.assertFalse(bticino_ipc.handle_request({'command': 'open_entrance', 'entrance': 'scala'})['ok'])
+
     def test_ping(self):
         self.assertEqual(bticino_ipc.handle_request({"command": "ping"})["ok"], True)
 
