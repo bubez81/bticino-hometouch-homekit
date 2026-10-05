@@ -14,6 +14,10 @@
       ,"enableTwoWayAudio": {"type": "boolean", "default": false}
       ,"enableCallUnlock": {"type": "boolean", "default": false}
       ,"separateCallUnlock": {"type": "boolean", "default": false}
+      ,"standalone": {"type": "boolean", "default": false}
+      ,"serialNumber": {"type": "string", "minLength": 1}
+      ,"ffmpegPath": {"type": "string", "minLength": 1}
+      ,"audioFfmpegPath": {"type": "string", "minLength": 1}
     },
     "additionalProperties": false
   }

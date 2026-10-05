@@ -4,7 +4,7 @@
   "description": "Homebridge child bridge for BTicino HOMETOUCH video door entry",
   "main": "index.js",
   "scripts": {
-    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js",
+    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js",
     "test:media": "node test-transport.js && node test-srtp-roundtrip.js && node test-two-way-audio.js"
   },
   "engines": {"node": ">=18.12.0", "homebridge": ">=1.6.0"},

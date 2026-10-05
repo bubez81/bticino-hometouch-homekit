@@ -4,6 +4,65 @@ Changes are dated by publication. This project remains experimental; entries
 describe implemented behavior separately from physical validation. No stable
 release or npm publication is implied.
 
+## 2026-10-05
+
+### Added
+
+- `standalone` option for the `BTicinoHOMETOUCH` accessory. The doorbell is
+  published as its own HomeKit accessory with the **Video Doorbell** category
+  (18), with the Doorbell service primary and the camera, two-way audio and
+  snapshots attached, instead of being bridged. On the test installation,
+  doorbell notifications reached iPhone/iPad only in this mode: while bridged,
+  HomePods chimed and the hub fetched snapshots, but no device was notified.
+- Snapshots are scaled and letterboxed to the resolution HomeKit requests
+  (for example 1280×720 or 640×360) with FFmpeg, as Camera-ffmpeg and
+  UniFi Protect do. If scaling fails, the original image is sent unchanged.
+- Snapshot diagnostics in the Homebridge log: requested size, size sent,
+  duration, and errors, which were previously silent.
+- `test-standalone.js` (mock HAP) included in `npm test`.
+
+### Changed
+
+- `config.schema.json` accepts `standalone`, `serialNumber`, `ffmpegPath` and
+  `audioFfmpegPath`; the last two were already used by the plugin.
+- `config.child.example.json` enables `standalone`.
+
+### How to use the doorbell now
+
+1. Set `"standalone": true` on the `BTicinoHOMETOUCH` accessory and restart the
+   dedicated Homebridge instance. The log shows
+   `Please add [<name> XXXX] manually in Home app. Setup Code: …`, which is
+   the bridge's own pairing code.
+2. In Apple Home, remove the previously bridged doorbell if it remains, then
+   add the new accessory via **Add Accessory → More options**. Choose
+   **Stream** for streaming, enable **Doorbell notifications** and assign a room.
+3. Put the lock accessories in the doorbell's room: touching and holding the
+   ring notification then shows live video with their controls. Home shows
+   every lock in the room; it cannot know which entrance rang. The full-screen
+   camera view in Home on iPhone does not show these controls.
+4. A `BTicinoCallLock` stays on the bridge. If the bridge is not paired in Home,
+   the lock is not available.
+
+### Troubleshooting notes from the test installation
+
+- Live view and snapshots stopped completely after re-adding the accessory:
+  Home had stored the camera as off, persisted as `"active": false` in
+  `persist/ControllerStorage.*.json`. Home rewrites this value whenever its hub
+  connects, so it must be changed in Home, not on disk.
+- A ring can be simulated without the outdoor panel by sending
+  `{"command":"notify_ring"}` to the listener IPC socket. HomePods will chime.
+- The HOMETOUCH gateway closes each SIP/TLS connection after about 1024 s. The
+  listener reconnects and re-registers in about one second.
+
+### Validation and remaining limits
+
+- Simulated rings delivered notifications with a snapshot on iPhone/iPad.
+  Notification controls for locks in the same room were verified. A real
+  outdoor ring in standalone mode is still pending.
+- On-demand live video remains intermittent: some sessions end with
+  `source ended` and no frames, others deliver video after about 6 seconds.
+- Plugin `npm test` and `npm run test:media` passed locally.
+
 ## 2026-10-04
 
 ### Added

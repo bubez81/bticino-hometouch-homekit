@@ -2,6 +2,7 @@
 
 const { request } = require('./ipc');
 const http = require('node:http');
+const { spawn } = require('node:child_process');
 const { StreamManager } = require('./stream');
 const { installCallUnlock } = require('./call-unlock');
 const managers = new WeakMap();
@@ -33,6 +34,27 @@ class BTicinoCallLock {
   getServices(){return [this.service];}
 }
 
+// Scale and letterbox a JPEG to the size HomeKit asked for, as camera-ffmpeg and unifi-protect do.
+function resizeSnapshot(ffmpegPath, image, width, height) {
+  return new Promise((resolve, reject) => {
+    const filter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
+    const ffmpeg = spawn(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-i', 'pipe:0',
+      '-vf', filter, '-frames:v', '1', '-f', 'image2', '-c:v', 'mjpeg', '-q:v', '3', 'pipe:1']);
+    const chunks = []; let stderr = '';
+    const timer = setTimeout(() => { ffmpeg.kill('SIGKILL'); reject(new Error('resize timeout')); }, 4000);
+    ffmpeg.stdout.on('data', chunk => chunks.push(chunk));
+    ffmpeg.stderr.on('data', chunk => { stderr += chunk; });
+    ffmpeg.on('error', err => { clearTimeout(timer); reject(err); });
+    ffmpeg.on('close', code => {
+      clearTimeout(timer);
+      const out = Buffer.concat(chunks);
+      code === 0 && out.length > 0 ? resolve(out) : reject(new Error(`ffmpeg exit ${code} ${stderr.trim()}`));
+    });
+    ffmpeg.stdin.on('error', () => {});
+    ffmpeg.stdin.end(image);
+  });
+}
+
 class BTicinoAccessory {
   constructor(log, config, api) {
     this.log = log;
@@ -53,12 +75,34 @@ class BTicinoAccessory {
     }
     this.controllers = [];
     if (this.config.enableCamera === true) this.publishCamera(name);
+    // standalone: publish the doorbell as its own HAP accessory with the Video Doorbell
+    // category (18), like a native HomeKit video doorbell, instead of inside the bridge.
+    if (this.config.standalone === true) this.publishStandalone(name);
     this.api.on('shutdown', () => { if (this.timer) clearInterval(this.timer); this.streamManager.closeAll().catch(err => this.log.error(err.message)); });
     this.didFinishLaunching();
   }
 
-  getServices() { return [...(this.config.cameraOnly ? [] : [this.doorbellService]),...(this.unlockService ? [this.unlockService] : [])]; }
-  getControllers() { return this.controllers; }
+  getServices() {
+    if (this.externalAccessory) return this.unlockService ? [this.unlockService] : [];
+    return [...(this.config.cameraOnly ? [] : [this.doorbellService]),...(this.unlockService ? [this.unlockService] : [])];
+  }
+  getControllers() { return this.externalAccessory ? [] : this.controllers; }
+
+  publishStandalone(name) {
+    const {hap} = this.api;
+    const accessory = new this.api.platformAccessory(name, hap.uuid.generate(`bticino-hometouch-standalone:${name}`), hap.Categories.VIDEO_DOORBELL);
+    accessory.getService(hap.Service.AccessoryInformation)
+      .setCharacteristic(hap.Characteristic.Manufacturer, 'BTicino')
+      .setCharacteristic(hap.Characteristic.Model, 'HOMETOUCH')
+      .setCharacteristic(hap.Characteristic.SerialNumber, this.config.serialNumber || 'HOMETOUCH');
+    if (!this.config.cameraOnly) accessory.addService(this.doorbellService);
+    this.controllers.forEach(controller => accessory.configureController(controller));
+    this.externalAccessory = accessory;
+    this.api.on('didFinishLaunching', () => {
+      this.api.publishExternalAccessories('homebridge-bticino-hometouch', [accessory]);
+      this.log.info(`BTicino HOMETOUCH pubblicato come accessorio indipendente (Video Doorbell): ${name}`);
+    });
+  }
 
   didFinishLaunching() {
     const socket = this.config.ipcSocket || '/tmp/bticino-hometouch.sock';
@@ -83,6 +127,8 @@ class BTicinoAccessory {
       },
       handleSnapshotRequest: async (_request, callback) => {
         this.log.info('BTicino HOMETOUCH snapshot richiesto da HomeKit');
+        const snapStarted = Date.now();
+        const snapAsked = JSON.stringify(_request);
         try {
           const image = await new Promise((resolve, reject) => {
             const req = http.get('http://127.0.0.1:8766/snapshot.jpg', res => {
@@ -94,8 +140,22 @@ class BTicinoAccessory {
             req.setTimeout(5000, () => req.destroy(new Error('Snapshot timeout')));
             req.on('error', reject);
           });
-          callback(null, image);
-        } catch (err) { callback(err); }
+          let output = image, note = 'originale';
+          const {width, height} = _request || {};
+          if (Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0) {
+            try {
+              output = await resizeSnapshot(this.config.ffmpegPath || 'ffmpeg', image, width, height);
+              note = `ridimensionato ${width}x${height}`;
+            } catch (err) {
+              note = `originale (resize fallito: ${err.message})`;
+            }
+          }
+          this.log.info(`Snapshot inviato: richiesta=${snapAsked} ${note} byte=${output.length} in ${Date.now() - snapStarted} ms`);
+          callback(null, output);
+        } catch (err) {
+          this.log.warn(`Snapshot fallito: richiesta=${snapAsked} errore=${err.message} dopo ${Date.now() - snapStarted} ms`);
+          callback(err);
+        }
       },
     };
     if (this.config.enableHapLive === true) {

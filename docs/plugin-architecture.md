@@ -23,6 +23,13 @@ bridge identity and pairing code for a new installation; preserve them on update
 Enable listener `BTICINO_IPC_ENABLED=1`, give the Homebridge service user access
 to its Unix socket, and set the camera's `ipcSocket` to that path.
 
+Set `standalone: true` (recommended since 2026-10-05). The doorbell is then
+published as a separate HomeKit accessory with the Video Doorbell category,
+paired with the bridge's code. Only that mode delivered ring notifications on the
+test installation. See the [changelog](../CHANGELOG.md#2026-10-05) for pairing
+steps and Home settings. Snapshots are scaled to the requested size with
+`ffmpegPath` and logged with request and result.
+
 `enableCamera` and `enableHapLive` control experimental camera/live behavior.
 On-demand viewing requires locally discovered camera candidates and FFmpeg.
 Incoming audio requires listener `incoming_audio` and camera `enableTwoWayAudio`.

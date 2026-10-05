@@ -1,5 +1,14 @@
 # Live validation
 
+## Current status — 2026-10-05
+
+With `standalone: true` the doorbell is advertised as a Video Doorbell
+(category 18). Simulated rings produced iPhone/iPad notifications with a scaled
+snapshot, and touching and holding the notification showed the locks of the same
+room. While bridged, the same rings only chimed HomePods. A real outdoor ring in
+standalone mode, sustained live reliability and correct-entrance opening remain
+pending. See the [changelog](../CHANGELOG.md#2026-10-05).
+
 ## Current status — 2026-10-04
 
 The dedicated bridge runs as a persistent service on the test installation.

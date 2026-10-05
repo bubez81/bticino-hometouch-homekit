@@ -22,6 +22,8 @@ forwards live video to Homebridge on the local loopback interface.
 > experimentally. A dedicated Homebridge plugin now includes on-demand video,
 > incoming-call audio and contextual opening. Hardware validation is incomplete;
 > see the [October update](docs/update-2026-10.md) before enabling these features.
+> Since 2026-10-05 the dedicated plugin publishes the doorbell as a standalone
+> HomeKit Video Doorbell; see the [changelog](CHANGELOG.md#2026-10-05).
 
 See the [changelog](CHANGELOG.md), [plugin architecture](docs/plugin-architecture.md)
 and [current validation status](homebridge-bticino-hometouch/LIVE-VALIDATION.md).
@@ -42,7 +44,7 @@ optional and do not include rewards or support services.
 | SIP registration and renewal on one TLS connection | Verified on one HOMETOUCH installation |
 | `100 Trying` / `183 Session Progress` without answering | Verified on one HOMETOUCH installation |
 | H.264 SRTP/SDES snapshot and short live early media | Verified on one HOMETOUCH installation |
-| HomeKit doorbell notification through Homebridge | Verified on one HOMETOUCH installation |
+| HomeKit doorbell notification through Homebridge | Verified on one HOMETOUCH installation; the dedicated plugin requires `standalone: true` (Video Doorbell category) |
 | Creation/recovery of a SIP endpoint and certificate | Verified on one installation; empty HTTP 201 responses require recovery |
 | Continuous last-snapshot fallback after the incoming call ends | Implemented; broader HomeKit testing required |
 | Privacy-preserving multi-entrance classification | Implemented experimentally; requires local calibration |
@@ -310,6 +312,8 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
 - Validate the continuous latest-snapshot fallback across additional HomeKit clients
 - Add receive-only audio, followed by carefully tested two-way audio
 - Associate the correct opening control with each entrance where HomeKit allows
+- Offer a Home Assistant integration alongside Homebridge, reusing the same
+  listener, IPC and snapshot/video endpoints
 
 ## Disclaimer
 
