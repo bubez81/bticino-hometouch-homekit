@@ -79,6 +79,15 @@ release or npm publication is implied.
 4. A `BTicinoCallLock` stays on the bridge. If the bridge is not paired in Home,
    the lock is not available.
 
+### Documentation
+
+- README section *Choose your home platform* comparing Homebridge and Home
+  Assistant, with short setup steps for each.
+- New [Homebridge guide](docs/homebridge.md): plugin configuration with
+  `standalone`, pairing and Home settings, gates through the MQTT bridge and
+  mqttthing, troubleshooting. The [Home Assistant guide](docs/home-assistant.md)
+  covers the API, HACS installation, entities and the blueprint.
+
 ### Troubleshooting notes from the test installation
 
 - Live view and snapshots stopped completely after re-adding the accessory:

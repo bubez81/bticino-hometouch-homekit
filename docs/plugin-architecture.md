@@ -1,5 +1,7 @@
 # Standalone Homebridge plugin
 
+Setup guide: [homebridge.md](homebridge.md). This page describes the design.
+
 The `homebridge-bticino-hometouch/` package is intentionally separate from
 `homebridge-camera-ffmpeg`. It can run in an isolated Homebridge instance. The
 Python listener owns SIP signaling; the plugin manages HomeKit media sessions
