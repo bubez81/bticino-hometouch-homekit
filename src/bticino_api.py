@@ -92,6 +92,21 @@ class EventBus:
         with self.lock:
             self.subscribers.discard(subscriber)
 
+    def close_streams(self):
+        """Wake every open stream so its handler thread ends promptly."""
+        with self.lock:
+            subscribers, self.subscribers = list(self.subscribers), set()
+        for subscriber in subscribers:
+            while True:
+                try:
+                    subscriber.put_nowait(None)
+                    break
+                except queue.Full:
+                    try:
+                        subscriber.get_nowait()
+                    except queue.Empty:
+                        pass
+
 
 class ApiServer(ThreadingHTTPServer):
     daemon_threads = True
@@ -107,6 +122,10 @@ class ApiServer(ThreadingHTTPServer):
         self.allowed_clients = set(allowed_clients or [])
         self.log = log
         super().__init__(address, ApiHandler)
+
+    def shutdown(self):
+        self.bus.close_streams()
+        super().shutdown()
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -210,6 +229,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.wfile.write(b': keepalive\n\n')
                     self.wfile.flush()
                     continue
+                if event is None:
+                    break
                 self.write_event(event)
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass

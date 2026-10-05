@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BTicino HOMETOUCH",
+        "description": "Listener address and network API token (the `api_token` file on the listener host).",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "API token"
+        }
+      },
+      "reauth_confirm": {
+        "title": "New token",
+        "description": "The token is no longer valid; enter the current one.",
+        "data": {
+          "token": "API token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the listener",
+      "invalid_auth": "Invalid token or client not allowed",
+      "unsupported_version": "Unsupported API version"
+    },
+    "abort": {
+      "already_configured": "Listener already configured",
+      "reauth_successful": "Token updated"
+    }
+  },
+  "entity": {
+    "event": {
+      "doorbell": {
+        "name": "Doorbell"
+      }
+    },
+    "button": {
+      "open_entrance": {
+        "name": "Open {entrance}"
+      }
+    },
+    "camera": {
+      "camera": {
+        "name": "Camera"
+      }
+    },
+    "image": {
+      "last_visitor": {
+        "name": "Last visitor"
+      }
+    },
+    "binary_sensor": {
+      "sip_registered": {
+        "name": "SIP registration"
+      },
+      "call_active": {
+        "name": "Call in progress"
+      }
+    },
+    "sensor": {
+      "last_ring": {
+        "name": "Last ring"
+      },
+      "last_entrance": {
+        "name": "Last ring entrance",
+        "state": {
+          "unknown": "Not recognized"
+        }
+      }
+    }
+  }
+}
