@@ -25,7 +25,7 @@ forwards live video to Homebridge on the local loopback interface.
 > Since 2026-10-05 the dedicated plugin publishes the doorbell as a standalone
 > HomeKit Video Doorbell; see the [changelog](CHANGELOG.md#2026-10-05).
 
-See the [changelog](CHANGELOG.md), [plugin architecture](docs/plugin-architecture.md)
+See the [changelog](CHANGELOG.md), [Home Assistant integration](docs/home-assistant.md), [plugin architecture](docs/plugin-architecture.md)
 and [current validation status](homebridge-bticino-hometouch/LIVE-VALIDATION.md).
 
 ## Support the project
@@ -52,6 +52,8 @@ optional and do not include rewards or support services.
 | Incoming two-way audio | Implemented; full physical conversation test pending |
 | Contextual opening and separate HomeKit lock | Implemented, opt-in; correct physical entrance requires verification |
 | Opening configured entrances on demand (`open_entrance`) | Verified on one HOMETOUCH installation (opt-in) |
+| Authenticated network API with event stream | Implemented, opt-in |
+| Home Assistant integration (HACS) and ring-notification blueprint | Experimental; see [Home Assistant](docs/home-assistant.md) |
 
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
@@ -238,6 +240,35 @@ python3 -m venv /opt/bticino-sniffer/venv-mqtt
 `packaging/io.github.bubez81.bticino-hometouch-mqtt.plist` runs it as a macOS
 service next to the listener (IPC must be enabled).
 
+### Network API for home automation (optional)
+
+`src/bticino_api.py` serves an authenticated REST API with a Server-Sent Events
+stream, using only the Python standard library. It is the interface for the
+upcoming Home Assistant integration and works for any client.
+
+```json
+"api": {"enabled": true, "bind": "0.0.0.0", "port": 8790,
+        "token_file": "/opt/bticino-sniffer/private/api_token",
+        "allowed_clients": ["192.0.2.30"]}
+```
+
+Create the token with
+`python3 -c "import secrets; print(secrets.token_urlsafe(32))" > api_token && chmod 600 api_token`.
+Every request needs `Authorization: Bearer <token>`. Keep `allowed_clients` to
+the home automation host, and never expose the port beyond the LAN.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/info` | API version, configured entrances, capabilities |
+| `GET /api/v1/state` | SIP registration, active call, last ring (with entrance when known), last opening |
+| `GET /api/v1/events` | `text/event-stream`: `state`, `ring`, `entrance_detected`, `snapshot_ready`, `call_ended`, `entrance_open`, `sip_registered`, `sip_disconnected` |
+| `GET /api/v1/snapshot.jpg?width=&height=` | latest image, scaled and letterboxed when a size is given |
+| `POST /api/v1/entrances/<name>/open` | opening pulse (`404` unknown, `409` busy, `403` disabled) |
+
+Events carry an anonymous per-call reference, never SIP identifiers, keys or
+media addresses. A ring is published immediately; `entrance_detected` follows
+when visual classification identifies the entrance.
+
 The optional `--diagnose-activations` probe decrypts configuration archives in
 memory using the format password used by the official client (not your account
 password). It prints XML structure only, without saving the configuration or
@@ -359,8 +390,7 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
 - Validate the continuous latest-snapshot fallback across additional HomeKit clients
 - Add receive-only audio, followed by carefully tested two-way audio
 - Associate the correct opening control with each entrance where HomeKit allows
-- Offer a Home Assistant integration alongside Homebridge, reusing the same
-  listener, IPC and snapshot/video endpoints
+- Home Assistant live video and two-way audio through go2rtc
 
 ## Disclaimer
 

@@ -29,6 +29,7 @@ from bticino_audio_offer import parse_audio_offer
 from bticino_homekit_call import CallCommands, MediaAttachment
 from bticino_call_unlock import open_current_call
 from bticino_entrance_open import EntranceOpener
+import bticino_api
 from bticino_signaling_observation import observe as observe_signaling
 
 
@@ -126,6 +127,8 @@ DIAGNOSTIC_KEY_LOCK = threading.Lock()
 ENTRANCE_PROFILES = {}
 IPC_MODULE = None
 ENTRANCE_OPENER = EntranceOpener({})  # replaced from config in main()
+API_BUS = bticino_api.EventBus()
+API_COMMANDS = None
 FALLBACK_PROCESS = None
 FALLBACK_LOCK = threading.Lock()
 
@@ -418,6 +421,54 @@ def latest_snapshot():
 def notify_ipc_ring(snapshot=None, entrance=None):
     if IPC_MODULE is not None:
         IPC_MODULE.handle_request({"command": "notify_ring", "snapshot": str(snapshot) if snapshot else None, "entrance": entrance})
+
+
+def api_publish(event_type, call_id=None, **data):
+    """Publish an API event; never let integration events disturb SIP handling."""
+    try:
+        if call_id is not None:
+            data["call"] = call_reference(call_id)
+        API_BUS.publish(event_type, **data)
+    except Exception as exc:
+        try:
+            log(f"API evento {event_type} non pubblicato: {type(exc).__name__}")
+        except OSError:
+            pass
+
+
+def api_snapshot(width=None, height=None):
+    path = PLACEHOLDER_SNAPSHOT if snapshot_pending() else latest_snapshot()
+    try:
+        image = path.read_bytes() if path else None
+    except OSError:
+        return None
+    if not image or not width:
+        return image
+    scale = (f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2")
+    try:
+        result = subprocess.run(
+            [FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "image2pipe",
+             "-i", "pipe:0", "-vf", scale, "-frames:v", "1", "-f", "image2", "-c:v", "mjpeg",
+             "-q:v", "3", "pipe:1"],
+            input=image, capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return image
+    return result.stdout if result.returncode == 0 and result.stdout else image
+
+
+def api_info():
+    return {"entrances": sorted(ENTRANCE_OPENER.entrances) if ENTRANCE_OPENER.enabled else [],
+            "opening_enabled": ENTRANCE_OPENER.enabled,
+            "entrance_classification": ENTRANCE_CLASSIFICATION_ENABLED,
+            "capabilities": ["events", "snapshot"] + (["open"] if ENTRANCE_OPENER.enabled else [])}
+
+
+def api_command(request):
+    commands = API_COMMANDS
+    if commands is None:
+        return {"ok": False, "error": "sip_unavailable"}
+    return commands.request(request)
 
 
 def set_snapshot_pending(call_id, pending):
@@ -993,6 +1044,8 @@ class EarlyMediaCapture:
             try:
                 name, distance, reason = classify_entrance_image(self.classification_path)
                 elapsed = time.time() - self.started
+                api_publish("entrance_detected", call_id=self.call_id, entrance=name,
+                                method="visual")
                 if name:
                     log(f"ENTRANCE VISUAL: {name} distance={distance:.3f} elapsed={elapsed:.2f}s diagnostic-only")
                 else:
@@ -1005,6 +1058,7 @@ class EarlyMediaCapture:
             os.chmod(self.snapshot, 0o600)
             set_snapshot_pending(self.call_id, False)
             self.snapshot_reported = True
+            api_publish("snapshot_ready", call_id=self.call_id)
             log(
                 f"SNAPSHOT OK: {self.snapshot.name} "
                 f"({self.snapshot.stat().st_size} byte); "
@@ -1014,6 +1068,8 @@ class EarlyMediaCapture:
                 try:
                     name, distance, reason = classify_entrance_image(self.snapshot)
                     elapsed = time.time() - self.started
+                    api_publish("entrance_detected", call_id=self.call_id, entrance=name,
+                                    method="visual_fallback")
                     shown = "n/a" if distance is None else f"{distance:.3f}"
                     log(
                         f"ENTRANCE VISUAL FALLBACK: {name or 'sconosciuto'} "
@@ -1175,7 +1231,10 @@ class HomtouchListener:
         if command == 'open_entrance':
             if not self.registered:
                 return {'ok': False, 'error': 'sip_unavailable'}
-            return ENTRANCE_OPENER.request(request.get('entrance'), self, DOMAIN)
+            result = ENTRANCE_OPENER.request(request.get('entrance'), self, DOMAIN)
+            api_publish("entrance_open", entrance=request.get('entrance'),
+                            result=result.get('state') or result.get('error'))
+            return result
         if command == 'entrance_status':
             return ENTRANCE_OPENER.status()
         if command == 'attach_incoming':
@@ -1384,6 +1443,8 @@ class HomtouchListener:
 
 
     def registration_success(self, raw):
+        if not API_BUS.snapshot_state()["sip_registered"]:
+            api_publish("sip_registered")
         headers, _ = sip_headers(raw)
 
         expiry = REGISTER_EXPIRES
@@ -1604,6 +1665,7 @@ class HomtouchListener:
         self.media[call_id] = capture
         self.incoming_dialogs[call_id] = dialog
         self.publish_incoming_state()
+        api_publish("ring", call_id=call_id)
         if IPC_MODULE is not None:
             notify_ipc_ring(capture.snapshot)
             log("HOMEKIT IPC: suonata accodata senza attendere lo snapshot")
@@ -1624,9 +1686,11 @@ class HomtouchListener:
         for call_id, capture in list(self.media.items()):
             if capture.poll():
                 self.media.pop(call_id, None)
+                api_publish("call_ended", call_id=call_id, reason="media_ended")
             elif time.time() - capture.started > MEDIA_TIMEOUT + 5:
                 capture.stop("timeout")
                 self.media.pop(call_id, None)
+                api_publish("call_ended", call_id=call_id, reason="timeout")
         for call_id in list(self.incoming_dialogs):
             if call_id not in self.media:
                 self.incoming_dialogs.pop(call_id, None)
@@ -1649,6 +1713,7 @@ class HomtouchListener:
         capture = self.media.pop(call_id, None)
         if capture:
             capture.stop(reason)
+            api_publish("call_ended", call_id=call_id, reason=reason)
         self.incoming_dialogs.pop(call_id, None)
         self.dialog_tags.pop(call_id, None)
         self.publish_incoming_state()
@@ -1820,8 +1885,10 @@ class HomtouchListener:
 
 
     def loop(self):
+        global API_COMMANDS
         self.connect()
         self.register()
+        API_COMMANDS = self.call_commands
         if IPC_MODULE is not None:
             IPC_MODULE._incoming_commands = self.call_commands
 
@@ -1875,6 +1942,9 @@ class HomtouchListener:
 
 
     def close(self):
+        global API_COMMANDS
+        if API_COMMANDS is self.call_commands:
+            API_COMMANDS = None
         self.call_commands.close()
         if IPC_MODULE is not None and IPC_MODULE._incoming_commands is self.call_commands:
             IPC_MODULE._incoming_commands = None
@@ -1955,6 +2025,7 @@ def main():
         if len(ENTRANCE_PROFILES) < 2:
             raise RuntimeError("classificazione ingressi attiva ma servono almeno due profili")
     snapshot_server = start_snapshot_server()
+    api_server = bticino_api.start(CONFIG, API_BUS, api_info, api_command, api_snapshot, log=log)
     start_post_call_fallback(latest_snapshot())
 
     log("=" * 70)
@@ -1984,6 +2055,7 @@ def main():
             client.loop()
 
         except Exception as e:
+            api_publish("sip_disconnected", reason=type(e).__name__)
             connected_for = time.monotonic() - connected_at
             log(
                 f"Connessione/listener interrotto: "
@@ -2001,6 +2073,9 @@ def main():
 
     snapshot_server.shutdown()
     snapshot_server.server_close()
+    if api_server is not None:
+        api_server.shutdown()
+        api_server.server_close()
     if ipc_server is not None:
         ipc_server.shutdown()
         ipc_server.server_close()

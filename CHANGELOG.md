@@ -31,6 +31,25 @@ release or npm publication is implied.
   listener's `open_entrance`. Retained commands are ignored and repeated commands
   during a pulse are dropped. It is a drop-in replacement for custom gate
   gateways driving mqttthing or Home Assistant MQTT locks.
+- Optional network API (`src/bticino_api.py`, `api` in config): bearer-token
+  REST endpoints for info, state, scaled snapshots and entrance opening, plus a
+  Server-Sent Events stream (ring, entrance detected, snapshot ready, call ended,
+  entrance opening, SIP registration). Standard library only; allowed clients
+  configurable; validated by `validate_config.py`. It is the foundation for the
+  Home Assistant integration.
+- Home Assistant integration `bticino_hometouch` (HACS, `custom_components/`):
+  config flow with re-authentication, `doorbell` event entity, camera with
+  scaled snapshots, last-visitor image, one opening button per entrance (with an
+  `entrance` attribute), last-ring and last-entrance sensors, call and SIP status
+  binary sensors, and `bticino_hometouch_event` bus events. It follows the API's
+  event stream with automatic reconnection. See `docs/home-assistant.md`.
+- Blueprint `blueprints/automation/bticino_hometouch/ring_notification.yaml`:
+  time-sensitive mobile notification with snapshot and a button for the entrance
+  that rang, or for every entrance when it is not recognised in time.
+- `tests_ha/` (pytest-homeassistant-custom-component) and a CI job: the real API
+  server drives the integration in a test Home Assistant, and the blueprint is
+  validated with Home Assistant's own schemas.
+- The API closes open event streams on shutdown instead of leaving them waiting.
 
 ### Changed
 
