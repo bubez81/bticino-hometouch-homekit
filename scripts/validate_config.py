@@ -100,6 +100,27 @@ def validate(path):
             raise ValueError(f"configurazione ingressi non valida: {exc}") from exc
         if opener.enabled and not opener.entrances:
             raise ValueError("entrance_open_enabled richiede almeno un ingresso in entrances")
+    api = data.get("api")
+    if api is not None:
+        if not isinstance(api, dict):
+            raise ValueError("api deve essere un oggetto")
+        if api.get("enabled") is True:
+            port = api.get("port", 8790)
+            if not isinstance(port, int) or not 1 <= port <= 65535:
+                raise ValueError("api.port deve essere compreso tra 1 e 65535")
+            if not isinstance(api.get("bind", "127.0.0.1"), str):
+                raise ValueError("api.bind deve essere un indirizzo")
+            clients = api.get("allowed_clients", [])
+            if not isinstance(clients, list) or not all(isinstance(c, str) and c for c in clients):
+                raise ValueError("api.allowed_clients deve essere un elenco di indirizzi")
+            token_file = api.get("token_file")
+            if not isinstance(token_file, str) or not Path(token_file).expanduser().is_file():
+                raise ValueError("api.token_file mancante o non trovato")
+            token_path = Path(token_file).expanduser()
+            if token_path.stat().st_mode & 0o077:
+                raise ValueError("api.token_file deve avere permessi 600")
+            if len(token_path.read_text(encoding="utf-8").strip()) < 24:
+                raise ValueError("il token API deve avere almeno 24 caratteri")
     return data
 
 

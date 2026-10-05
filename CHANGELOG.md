@@ -31,6 +31,12 @@ release or npm publication is implied.
   listener's `open_entrance`. Retained commands are ignored and repeated commands
   during a pulse are dropped. It is a drop-in replacement for custom gate
   gateways driving mqttthing or Home Assistant MQTT locks.
+- Optional network API (`src/bticino_api.py`, `api` in config): bearer-token
+  REST endpoints for info, state, scaled snapshots and entrance opening, plus a
+  Server-Sent Events stream (ring, entrance detected, snapshot ready, call ended,
+  entrance opening, SIP registration). Standard library only; allowed clients
+  configurable; validated by `validate_config.py`. It is the foundation for the
+  Home Assistant integration.
 
 ### Changed
 

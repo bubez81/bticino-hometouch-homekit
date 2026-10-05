@@ -58,6 +58,39 @@ class ValidateConfigTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, error):
                             validate(config)
 
+    def test_api_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config.json"
+            token = root / "api_token"
+            token.write_text("x" * 32)
+            token.chmod(0o600)
+            weak = root / "weak_token"
+            weak.write_text("short")
+            weak.chmod(0o600)
+            open_token = root / "open_token"
+            open_token.write_text("x" * 32)
+            open_token.chmod(0o644)
+            base = self.make_config(root)
+            cases = [
+                ({"api": {"enabled": False}}, None),
+                ({"api": {"enabled": True, "bind": "0.0.0.0", "port": 8790, "token_file": str(token),
+                          "allowed_clients": ["198.51.100.20"]}}, None),
+                ({"api": {"enabled": True, "token_file": str(root / "missing")}}, "token_file"),
+                ({"api": {"enabled": True, "token_file": str(weak)}}, "24 caratteri"),
+                ({"api": {"enabled": True, "token_file": str(open_token)}}, "permessi 600"),
+                ({"api": {"enabled": True, "token_file": str(token), "port": 0}}, "api.port"),
+                ({"api": {"enabled": True, "token_file": str(token), "allowed_clients": "x"}}, "allowed_clients"),
+            ]
+            with patch("scripts.validate_config.shutil.which", return_value="/usr/bin/tool"):
+                for extra, error in cases:
+                    config.write_text(json.dumps({**base, **extra}))
+                    if error is None:
+                        validate(config)
+                    else:
+                        with self.assertRaisesRegex(ValueError, error):
+                            validate(config)
+
     def test_example_values_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

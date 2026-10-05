@@ -30,5 +30,12 @@
     "main": "20",
     "secondary": "21"
   },
+  "api": {
+    "enabled": false,
+    "bind": "127.0.0.1",
+    "port": 8790,
+    "token_file": "/opt/bticino-sniffer/private/api_token",
+    "allowed_clients": []
+  },
   "save_raw_sip": false
 }
