@@ -26,6 +26,11 @@ release or npm publication is implied.
   logged SIP responses, and release retry across reconnects. Configuration is
   checked by `validate_config.py`. This is the first step toward replacing
   installation-specific gate scripts and toward a Home Assistant integration.
+- Optional MQTT bridge (`src/bticino_mqtt_bridge.py`, launchd plist): entrance
+  locks on `<prefix>/<entrance>/set|state` and `<prefix>/status`, backed by the
+  listener's `open_entrance`. Retained commands are ignored and repeated commands
+  during a pulse are dropped. It is a drop-in replacement for custom gate
+  gateways driving mqttthing or Home Assistant MQTT locks.
 
 ### Changed
 

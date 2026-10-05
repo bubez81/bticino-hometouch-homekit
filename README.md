@@ -211,6 +211,33 @@ reports the last SIP response for press and release. One pulse runs at a time.
 A release that cannot be sent during a reconnect is retried for 15 seconds. A
 `200` response confirms delivery to the gateway, not physical opening.
 
+#### MQTT lock topics (optional)
+
+`src/bticino_mqtt_bridge.py` exposes every configured entrance as an MQTT lock,
+compatible with Homebridge mqttthing `lockMechanism` and Home Assistant MQTT locks:
+
+| Topic | Meaning |
+| --- | --- |
+| `<prefix>/<entrance>/set` | `UNLOCK` opens through the listener; `LOCK` only resets the state |
+| `<prefix>/<entrance>/state` | retained `UNLOCK` during the pulse, then `LOCK` (assumed, no sensor) |
+| `<prefix>/status` | retained `online` / `offline` (last will) |
+
+Retained commands are ignored, so a stale `UNLOCK` never reopens a door. The
+bridge needs `paho-mqtt` (the listener does not) and a private JSON file:
+
+```json
+{"host": "192.0.2.20", "port": 1883, "username": "…", "password": "…",
+ "client_id": "bticino-hometouch-mqtt", "prefix": "hometouch", "unlock_seconds": 3.0}
+```
+
+```sh
+python3 -m venv /opt/bticino-sniffer/venv-mqtt
+/opt/bticino-sniffer/venv-mqtt/bin/pip install paho-mqtt
+```
+
+`packaging/io.github.bubez81.bticino-hometouch-mqtt.plist` runs it as a macOS
+service next to the listener (IPC must be enabled).
+
 The optional `--diagnose-activations` probe decrypts configuration archives in
 memory using the format password used by the official client (not your account
 password). It prints XML structure only, without saving the configuration or
