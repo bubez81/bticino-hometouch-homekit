@@ -58,6 +58,29 @@ optional and do not include rewards or support services.
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
 
+## Choose your home platform
+
+The listener does all SIP and media work; pick one or both front ends.
+
+| | Homebridge → Apple Home | Home Assistant |
+| --- | --- | --- |
+| Guide | [docs/homebridge.md](docs/homebridge.md) | [docs/home-assistant.md](docs/home-assistant.md) |
+| Connects through | local IPC socket (same host) | authenticated network API (any host on the LAN) |
+| Ring notification | Apple Home, with snapshot (`standalone: true`) | Companion App via blueprint, with snapshot |
+| Opening | MQTT bridge + mqttthing locks, offered next to the doorbell | one button per entrance; the blueprint offers the entrance that rang |
+| Live video | yes (experimental) | snapshots now; go2rtc live video planned |
+| Two-way audio | yes (experimental) | planned |
+
+Steps in short:
+
+- **Homebridge:** enable IPC on the listener, run the plugin in a dedicated
+  Homebridge instance with `standalone: true`, add *Videocitofono* in Apple Home,
+  choose *Stream* and enable doorbell notifications. For gates, run the MQTT
+  bridge and add mqttthing locks in the doorbell's room.
+- **Home Assistant:** enable the listener's `api` section with a token, add
+  this repository to HACS as an integration, configure *BTicino HOMETOUCH*,
+  then import the ring-notification blueprint.
+
 ## Design principles
 
 - No HOMETOUCH firmware modification.
