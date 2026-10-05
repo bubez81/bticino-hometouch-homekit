@@ -1,0 +1,155 @@
+blueprint:
+  name: BTicino HOMETOUCH – ring notification with opening
+  description: >
+    When the video door entry rings, send a mobile notification with the visitor
+    snapshot and a button to open the entrance that rang. If the entrance is not
+    recognised in time, every configured entrance is offered.
+  domain: automation
+  author: bubez81
+  source_url: https://github.com/bubez81/bticino-hometouch-homekit/blob/main/blueprints/automation/bticino_hometouch/ring_notification.yaml
+  homeassistant:
+    min_version: "2026.7.0"
+  input:
+    devices:
+      name: Video door entry
+      icon: mdi:doorbell-video
+      input:
+        doorbell:
+          name: Doorbell event
+          selector:
+            entity:
+              domain: event
+              integration: bticino_hometouch
+              device_class: doorbell
+        entrance_sensor:
+          name: Last ring entrance sensor
+          selector:
+            entity:
+              domain: sensor
+              integration: bticino_hometouch
+        camera:
+          name: Camera (snapshot in the notification)
+          selector:
+            entity:
+              domain: camera
+              integration: bticino_hometouch
+        open_buttons:
+          name: Entrance opening buttons (up to 4)
+          selector:
+            entity:
+              domain: button
+              integration: bticino_hometouch
+              multiple: true
+        notify_devices:
+          name: Phones and tablets to notify
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+    settings:
+      name: Settings
+      icon: mdi:cog
+      collapsed: true
+      input:
+        entrance_wait:
+          name: Wait for entrance recognition
+          description: Seconds to wait for the entrance before offering every entrance.
+          default: 6
+          selector:
+            number: { min: 0, max: 20, unit_of_measurement: seconds, mode: slider }
+        answer_timeout:
+          name: Opening button validity
+          description: How long the opening button in the notification stays active.
+          default: 120
+          selector:
+            number: { min: 10, max: 600, unit_of_measurement: seconds, mode: box }
+        title:
+          name: Notification title
+          default: Videocitofono
+          selector:
+            text: {}
+        message:
+          name: Notification message
+          default: Hanno suonato
+          selector:
+            text: {}
+
+mode: single
+max_exceeded: silent
+
+variables:
+  entrance_sensor: !input entrance_sensor
+  camera: !input camera
+  open_buttons: !input open_buttons
+  notify_devices: !input notify_devices
+  title: !input title
+  message: !input message
+  prefix: "BTICINO_{{ context.id }}"
+
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: !input doorbell
+    options:
+      event_type:
+        - ring
+
+actions:
+  - alias: Wait briefly for the entrance to be recognised
+    wait_for_trigger:
+      - trigger: state
+        entity_id: !input entrance_sensor
+    timeout:
+      seconds: !input entrance_wait
+    continue_on_timeout: true
+  - variables:
+      detected: "{{ states(entrance_sensor) }}"
+      matching: >
+        {{ open_buttons | select('is_state_attr', 'entrance', detected) | list }}
+      offered: "{{ (matching if matching else open_buttons)[:4] }}"
+      entrance_label: >
+        {{ state_attr(matching[0], 'friendly_name') if matching else '' }}
+  - alias: Notify every selected device
+    repeat:
+      for_each: "{{ notify_devices }}"
+      sequence:
+        - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+          continue_on_error: true
+          data:
+            title: "{{ title }}"
+            message: "{{ message }}{{ ' – ' ~ detected if matching else '' }}"
+            data:
+              tag: "{{ prefix }}"
+              image: "/api/camera_proxy/{{ camera }}"
+              entity_id: "{{ camera }}"
+              push:
+                interruption-level: time-sensitive
+              actions: >
+                {% set ns = namespace(items=[]) %}
+                {% for button in offered %}
+                  {% set ns.items = ns.items + [{'action': prefix ~ '_' ~ loop.index0,
+                     'title': state_attr(button, 'friendly_name') or button}] %}
+                {% endfor %}
+                {{ ns.items }}
+  - alias: Wait for an opening button in the notification
+    wait_for_trigger:
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data: { action: "{{ prefix }}_0" }
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data: { action: "{{ prefix }}_1" }
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data: { action: "{{ prefix }}_2" }
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data: { action: "{{ prefix }}_3" }
+    timeout:
+      seconds: !input answer_timeout
+    continue_on_timeout: false
+  - variables:
+      chosen: "{{ offered[wait.trigger.event.data.action.split('_')[-1] | int] }}"
+  - action: button.press
+    target:
+      entity_id: "{{ chosen }}"

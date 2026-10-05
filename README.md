@@ -25,7 +25,7 @@ forwards live video to Homebridge on the local loopback interface.
 > Since 2026-10-05 the dedicated plugin publishes the doorbell as a standalone
 > HomeKit Video Doorbell; see the [changelog](CHANGELOG.md#2026-10-05).
 
-See the [changelog](CHANGELOG.md), [plugin architecture](docs/plugin-architecture.md)
+See the [changelog](CHANGELOG.md), [Home Assistant integration](docs/home-assistant.md), [plugin architecture](docs/plugin-architecture.md)
 and [current validation status](homebridge-bticino-hometouch/LIVE-VALIDATION.md).
 
 ## Support the project
@@ -52,7 +52,8 @@ optional and do not include rewards or support services.
 | Incoming two-way audio | Implemented; full physical conversation test pending |
 | Contextual opening and separate HomeKit lock | Implemented, opt-in; correct physical entrance requires verification |
 | Opening configured entrances on demand (`open_entrance`) | Verified on one HOMETOUCH installation (opt-in) |
-| Authenticated network API with event stream | Implemented, opt-in; Home Assistant integration in progress |
+| Authenticated network API with event stream | Implemented, opt-in |
+| Home Assistant integration (HACS) and ring-notification blueprint | Experimental; see [Home Assistant](docs/home-assistant.md) |
 
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
@@ -389,8 +390,7 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
 - Validate the continuous latest-snapshot fallback across additional HomeKit clients
 - Add receive-only audio, followed by carefully tested two-way audio
 - Associate the correct opening control with each entrance where HomeKit allows
-- Offer a Home Assistant integration alongside Homebridge, reusing the same
-  listener, IPC and snapshot/video endpoints
+- Home Assistant live video and two-way audio through go2rtc
 
 ## Disclaimer
 

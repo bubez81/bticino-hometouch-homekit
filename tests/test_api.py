@@ -110,6 +110,23 @@ class ApiTests(unittest.TestCase):
         event = json.loads(payload)
         self.assertEqual((event['type'], event['call']), ('ring', 'def456'))
 
+    def test_shutdown_ends_open_streams(self):
+        port = self.server.server_address[1]
+        sock = socket.create_connection(('127.0.0.1', port), timeout=5)
+        sock.sendall(f'GET /api/v1/events HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {TOKEN}\r\n\r\n'.encode())
+        data = b''
+        while b'event: state' not in data:
+            data += sock.recv(4096)
+        self.bus.close_streams()
+        rest = b''
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            rest += chunk
+        sock.close()
+        self.assertEqual(self.bus.subscribers, set())
+
     def test_full_subscriber_is_dropped(self):
         subscriber = self.bus.subscribe()
         for index in range(101):

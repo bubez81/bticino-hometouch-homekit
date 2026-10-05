@@ -1,0 +1,12 @@
+{
+  "domain": "bticino_hometouch",
+  "name": "BTicino HOMETOUCH",
+  "codeowners": ["@bubez81"],
+  "config_flow": true,
+  "documentation": "https://github.com/bubez81/bticino-hometouch-homekit",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/bubez81/bticino-hometouch-homekit/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
