@@ -38,6 +38,12 @@ release or npm publication is implied.
   `audioFfmpegPath`; the last two were already used by the plugin.
 - `config.child.example.json` enables `standalone`.
 
+### Fixed
+
+- CI: the Homebridge job installs FFmpeg, and `test-incoming-call.js` honors
+  `BTICINO_TEST_FFMPEG` like the other media tests. Previously the job failed
+  on Linux because the test looked for the macOS Homebrew path.
+
 ### How to use the doorbell now
 
 1. Set `"standalone": true` on the `BTicinoHOMETOUCH` accessory and restart the

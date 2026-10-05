@@ -6,6 +6,7 @@ const dgram=require('node:dgram');
 const fs=require('node:fs');
 const ipc=require('./ipc');
 const {IncomingCall,pair}=require('./incoming-call');
+const ffmpeg=process.env.BTICINO_TEST_FFMPEG||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg';
 (async()=>{
   const output=await pair(), remote=await pair();
   const socket=dgram.createSocket('udp4');
@@ -21,7 +22,7 @@ const {IncomingCall,pair}=require('./incoming-call');
   };
   const session={id:'incoming-test',audioSocket:socket,audioSsrc:123,req:{targetAddress:'127.0.0.1',
     audio:{port:output.port,srtp_key:crypto.randomBytes(16),srtp_salt:crypto.randomBytes(14)}}};
-  const adapter=new IncomingCall({socketPath:'unused',config:{},log:console},session,
+  const adapter=new IncomingCall({socketPath:'unused',config:{ffmpegPath:ffmpeg},log:console},session,
     {audio:{codec:'OPUS',channel:1,sample_rate:24,pt:110}});
   try {
     await adapter.start();
