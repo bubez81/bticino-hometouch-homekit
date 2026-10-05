@@ -24,5 +24,11 @@
       "stairs": ["/opt/bticino-sniffer/private/entrances/stairs.jpg"]
     }
   },
+  "entrance_open_enabled": false,
+  "entrance_pulse_seconds": 1.0,
+  "entrances": {
+    "main": "20",
+    "secondary": "21"
+  },
   "save_raw_sip": false
 }

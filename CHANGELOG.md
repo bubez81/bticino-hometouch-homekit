@@ -20,6 +20,17 @@ release or npm publication is implied.
 - Snapshot diagnostics in the Homebridge log: requested size, size sent,
   duration, and errors, which were previously silent.
 - `test-standalone.js` (mock HAP) included in `npm test`.
+- Listener entrance opening (opt-in, `entrance_open_enabled`): named entrances
+  with lock addresses, a configurable press/release pulse sent as SIP MESSAGE on
+  the registered connection, IPC commands `open_entrance` and `entrance_status`,
+  logged SIP responses, and release retry across reconnects. Configuration is
+  checked by `validate_config.py`. This is the first step toward replacing
+  installation-specific gate scripts and toward a Home Assistant integration.
+- Optional MQTT bridge (`src/bticino_mqtt_bridge.py`, launchd plist): entrance
+  locks on `<prefix>/<entrance>/set|state` and `<prefix>/status`, backed by the
+  listener's `open_entrance`. Retained commands are ignored and repeated commands
+  during a pulse are dropped. It is a drop-in replacement for custom gate
+  gateways driving mqttthing or Home Assistant MQTT locks.
 
 ### Changed
 
@@ -68,6 +79,8 @@ release or npm publication is implied.
 - On-demand live video remains intermittent: some sessions end with
   `source ended` and no frames, others deliver video after about 6 seconds.
 - Plugin `npm test` and `npm run test:media` passed locally.
+- Entrance opening from the listener was verified physically on the test
+  installation: press and release each answered `200 Ok` in under 200 ms.
 
 ## 2026-10-04
 

@@ -51,6 +51,7 @@ optional and do not include rewards or support services.
 | On-demand video in the dedicated plugin | Experimental; source lifetime/reliability require further testing |
 | Incoming two-way audio | Implemented; full physical conversation test pending |
 | Contextual opening and separate HomeKit lock | Implemented, opt-in; correct physical entrance requires verification |
+| Opening configured entrances on demand (`open_entrance`) | Verified on one HOMETOUCH installation (opt-in) |
 
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
@@ -190,6 +191,52 @@ prevent an older HomeKit notification from becoming blank, but it is not live
 video. The dedicated plugin has a separate experimental on-demand path; packet
 reception alone does not establish that an image is fresh. See the
 [on-demand notes](docs/on-demand-research.md).
+
+### Opening entrances
+
+The listener can open door locks with the same press/release pulse used by the
+official app (`*8*19*<address>##`, then `*8*20*<address>##`), sent as SIP
+MESSAGE on its own registered connection. It is disabled by default:
+
+```json
+"entrance_open_enabled": true,
+"entrance_pulse_seconds": 1.0,
+"entrances": {"stairs": "20", "external": "21"}
+```
+
+Names are lowercase identifiers; addresses are the installation's lock
+addresses (1–4 digits). With IPC enabled, `{"command":"open_entrance",
+"entrance":"stairs"}` opens one entrance and `{"command":"entrance_status"}`
+reports the last SIP response for press and release. One pulse runs at a time.
+A release that cannot be sent during a reconnect is retried for 15 seconds. A
+`200` response confirms delivery to the gateway, not physical opening.
+
+#### MQTT lock topics (optional)
+
+`src/bticino_mqtt_bridge.py` exposes every configured entrance as an MQTT lock,
+compatible with Homebridge mqttthing `lockMechanism` and Home Assistant MQTT locks:
+
+| Topic | Meaning |
+| --- | --- |
+| `<prefix>/<entrance>/set` | `UNLOCK` opens through the listener; `LOCK` only resets the state |
+| `<prefix>/<entrance>/state` | retained `UNLOCK` during the pulse, then `LOCK` (assumed, no sensor) |
+| `<prefix>/status` | retained `online` / `offline` (last will) |
+
+Retained commands are ignored, so a stale `UNLOCK` never reopens a door. The
+bridge needs `paho-mqtt` (the listener does not) and a private JSON file:
+
+```json
+{"host": "192.0.2.20", "port": 1883, "username": "…", "password": "…",
+ "client_id": "bticino-hometouch-mqtt", "prefix": "hometouch", "unlock_seconds": 3.0}
+```
+
+```sh
+python3 -m venv /opt/bticino-sniffer/venv-mqtt
+/opt/bticino-sniffer/venv-mqtt/bin/pip install paho-mqtt
+```
+
+`packaging/io.github.bubez81.bticino-hometouch-mqtt.plist` runs it as a macOS
+service next to the listener (IPC must be enabled).
 
 The optional `--diagnose-activations` probe decrypts configuration archives in
 memory using the format password used by the official client (not your account

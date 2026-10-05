@@ -34,7 +34,8 @@ def set_incoming_state(state):
 def handle_request(request: dict) -> dict:
     global _call_process, _last_event, _media_info, _call_owner
     command = request.get("command")
-    if command in ('attach_incoming', 'answer_incoming', 'release_incoming', 'open_incoming'):
+    if command in ('attach_incoming', 'answer_incoming', 'release_incoming', 'open_incoming',
+                   'open_entrance', 'entrance_status'):
         commands = _incoming_commands
         if commands is None:
             return {'ok': False, 'error': 'incoming_audio_unavailable'}

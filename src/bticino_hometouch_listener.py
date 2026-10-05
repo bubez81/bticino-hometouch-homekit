@@ -28,6 +28,7 @@ from bticino_incoming_dialog import IncomingDialog
 from bticino_audio_offer import parse_audio_offer
 from bticino_homekit_call import CallCommands, MediaAttachment
 from bticino_call_unlock import open_current_call
+from bticino_entrance_open import EntranceOpener
 from bticino_signaling_observation import observe as observe_signaling
 
 
@@ -124,6 +125,7 @@ DIAGNOSTIC_KEY = None
 DIAGNOSTIC_KEY_LOCK = threading.Lock()
 ENTRANCE_PROFILES = {}
 IPC_MODULE = None
+ENTRANCE_OPENER = EntranceOpener({})  # replaced from config in main()
 FALLBACK_PROCESS = None
 FALLBACK_LOCK = threading.Lock()
 
@@ -1170,6 +1172,12 @@ class HomtouchListener:
         command = request['command']
         if command == 'open_incoming':
             return open_current_call(self, owner, CONFIG.get('incoming_unlock', False), DOMAIN)
+        if command == 'open_entrance':
+            if not self.registered:
+                return {'ok': False, 'error': 'sip_unavailable'}
+            return ENTRANCE_OPENER.request(request.get('entrance'), self, DOMAIN)
+        if command == 'entrance_status':
+            return ENTRANCE_OPENER.status()
         if command == 'attach_incoming':
             if len(self.incoming_dialogs) != 1:
                 return {'ok': False, 'error': 'no_unique_incoming_call'}
@@ -1825,6 +1833,7 @@ class HomtouchListener:
         while RUNNING:
 
             self.call_commands.drain()
+            ENTRANCE_OPENER.tick(self, DOMAIN)
 
             self.maintain_media()
 
@@ -1846,6 +1855,8 @@ class HomtouchListener:
 
             if first.startswith("SIP/2.0"):
                 headers, _ = sip_headers(raw)
+                if ENTRANCE_OPENER.on_response(headers.get('call-id', ''), first):
+                    continue
                 dialog = self.incoming_dialogs.get(headers.get('call-id', ''))
                 if dialog:
                     dialog.receive(raw)
@@ -1906,8 +1917,9 @@ signal.signal(
 
 
 def main():
-    global ENTRANCE_PROFILES, IPC_MODULE
+    global ENTRANCE_PROFILES, IPC_MODULE, ENTRANCE_OPENER
     validate_runtime_settings()
+    ENTRANCE_OPENER = EntranceOpener.from_config(CONFIG, log=log)
     BASE.mkdir(
         parents=True,
         exist_ok=True
@@ -1956,6 +1968,8 @@ def main():
     log(f"Pool RTP/RTCP: UDP {MEDIA_PORT_START}-{MEDIA_PORT_END}")
     if ENTRANCE_CLASSIFICATION_ENABLED:
         log(f"Classificazione ingressi diagnostica: {len(ENTRANCE_PROFILES)} profili, frame={ENTRANCE_CLASSIFICATION_FRAME}")
+    if ENTRANCE_OPENER.enabled:
+        log(f"Apertura ingressi attiva: {', '.join(sorted(ENTRANCE_OPENER.entrances))}; impulso {ENTRANCE_OPENER.pulse_seconds}s")
     log("=" * 70)
 
     reconnect_delay = max(0.0, RECONNECT_INITIAL_DELAY)

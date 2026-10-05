@@ -36,6 +36,28 @@ class ValidateConfigTests(unittest.TestCase):
             with patch("scripts.validate_config.shutil.which", return_value="/usr/bin/tool"):
                 self.assertEqual(validate(config)["sip_port"], 5061)
 
+    def test_entrance_opening_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config.json"
+            base = self.make_config(root)
+            cases = [
+                ({"entrance_open_enabled": True, "entrances": {"scala": "20", "esterno": "21"}}, None),
+                ({"entrance_open_enabled": True, "entrances": {}}, "almeno un ingresso"),
+                ({"entrances": {"Scala": "20"}}, "ingressi non valida"),
+                ({"entrances": {"scala": "2O"}}, "ingressi non valida"),
+                ({"entrances": ["20"]}, "nome -> indirizzo"),
+                ({"entrances": {"scala": "20"}, "entrance_pulse_seconds": 30}, "ingressi non valida"),
+            ]
+            with patch("scripts.validate_config.shutil.which", return_value="/usr/bin/tool"):
+                for extra, error in cases:
+                    config.write_text(json.dumps({**base, **extra}))
+                    if error is None:
+                        validate(config)
+                    else:
+                        with self.assertRaisesRegex(ValueError, error):
+                            validate(config)
+
     def test_example_values_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

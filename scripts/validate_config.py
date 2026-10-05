@@ -5,7 +5,11 @@ import argparse
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from bticino_entrance_open import EntranceOpener  # noqa: E402
 
 
 REQUIRED_TEXT = (
@@ -87,6 +91,15 @@ def validate(path):
             if any(not isinstance(image, str) or not Path(image).expanduser().is_file()
                    for image in images):
                 raise ValueError(f"immagine privata non trovata per il profilo: {name}")
+    if any(key in data for key in ("entrances", "entrance_open_enabled", "entrance_pulse_seconds")):
+        if not isinstance(data.get("entrances", {}), dict):
+            raise ValueError("entrances deve essere un oggetto nome -> indirizzo")
+        try:
+            opener = EntranceOpener.from_config(data)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"configurazione ingressi non valida: {exc}") from exc
+        if opener.enabled and not opener.entrances:
+            raise ValueError("entrance_open_enabled richiede almeno un ingresso in entrances")
     return data
 
 
