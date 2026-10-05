@@ -68,6 +68,8 @@ release or npm publication is implied.
 - On-demand live video remains intermittent: some sessions end with
   `source ended` and no frames, others deliver video after about 6 seconds.
 - Plugin `npm test` and `npm run test:media` passed locally.
+- Entrance opening from the listener was verified physically on the test
+  installation: press and release each answered `200 Ok` in under 200 ms.
 
 ## 2026-10-04
 

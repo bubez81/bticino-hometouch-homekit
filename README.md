@@ -51,7 +51,7 @@ optional and do not include rewards or support services.
 | On-demand video in the dedicated plugin | Experimental; source lifetime/reliability require further testing |
 | Incoming two-way audio | Implemented; full physical conversation test pending |
 | Contextual opening and separate HomeKit lock | Implemented, opt-in; correct physical entrance requires verification |
-| Opening configured entrances on demand (`open_entrance`) | Implemented, opt-in; physical validation from the listener pending |
+| Opening configured entrances on demand (`open_entrance`) | Verified on one HOMETOUCH installation (opt-in) |
 
 This is suitable for technically experienced testers, not yet a turnkey
 consumer installation. A spare HOMETOUCH SIP endpoint slot is required.
