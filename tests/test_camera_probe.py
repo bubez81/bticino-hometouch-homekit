@@ -168,6 +168,53 @@ class ProbeTests(unittest.TestCase):
             self.assertFalse(path.exists())
         self.assertIsNone(probe.dialog_path(SimpleNamespace()))
 
+    def test_lost_connection_reconnects_and_ends_call(self):
+        sent, connects = [], []
+        class Sock:
+            def bind(self, *a): pass
+            def sendto(self, *a): pass
+            def close(self): pass
+            def setblocking(self, *a): pass
+            def recv(self, *a): raise BlockingIOError()
+        class Client:
+            username = 'test'
+            account = 'test@gateway.example'
+            local_ip = '127.0.0.1'
+            local_port = 12345
+            sock = Sock()
+            def connect(self): connects.append(1)
+            def send(self, msg): sent.append(msg)
+            def respond_basic(self, *a): pass
+            @property
+            def stream(self): return self
+            def read_message(self, timeout):
+                msg = sent[-1]
+                if msg.startswith('ACK') and len(connects) == 1:
+                    raise ConnectionError('link dropped')
+                call = next(x for x in msg.splitlines() if x.startswith('Call-ID:'))
+                seq = next(x for x in msg.splitlines() if x.startswith('CSeq:'))
+                body = 'v=0\r\nc=IN IP4 192.0.2.1\r\nm=video 30000 RTP/SAVP 96\r\n'
+                return ('SIP/2.0 200 OK\r\n'+call+'\r\n'+seq+'\r\nTo: <sip:MHT@gateway.example>;tag=remote\r\nContact: <sip:MHT@gateway.example>\r\n\r\n'+body).encode()
+        def headers(raw):
+            return {k.lower(): v.strip() for k, v in (x.split(':', 1) for x in raw.decode().splitlines()[1:] if ':' in x)}, {}
+        runtime = tempfile.mkdtemp()
+        lib = SimpleNamespace(HomtouchListener=Client, DOMAIN='example', RUNTIME_DIR=runtime,
+                              sip_headers=headers, status_code=lambda raw: 200,
+                              sip_first_line=lambda raw: raw.decode().splitlines()[0])
+        ticks = iter(i * 0.25 for i in range(1000))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'candidates.json'
+            path.write_text(json.dumps({'candidates': [{'cid': '10050', 'devaddr': '200'}]}))
+            with patch.object(probe.importlib.util, 'module_from_spec', return_value=lib), patch.object(probe.importlib.util, 'spec_from_file_location', return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda m: None))), patch.object(probe.socket, 'socket', return_value=Sock()), patch.object(probe.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(probe.time, 'sleep'), patch.object(probe.signal, 'signal'), patch('sys.argv', ['probe', '--candidates', str(path), '--candidate', '1', '--stream', '--duration', '30']), patch.object(probe, 'FrameDecoder', side_effect=RuntimeError('no decoder')), redirect_stdout(io.StringIO()) as out:
+                with self.assertRaises(ConnectionError):
+                    probe.main()
+        self.assertEqual(len(connects), 2)
+        self.assertEqual([m.split()[0] for m in sent], ['INVITE', 'ACK', 'BYE'])
+        call_id = next(x for x in sent[0].splitlines() if x.startswith('Call-ID:'))
+        self.assertIn(call_id, sent[2])
+        self.assertIn('STALE_BYE status=200', out.getvalue())
+        self.assertFalse((Path(runtime) / probe.DIALOG_FILE).exists())
+
     def test_accepted_session_ack_and_bye(self):
         sent = []
         class Sock:

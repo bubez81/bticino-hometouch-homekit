@@ -199,12 +199,16 @@ class StreamManager {
           try {
             const status = await ipc.request(this.socketPath, 'status', {}, 2000);
             if (s.state !== 'streaming' || status.state !== 'idle') return;
+            // Back off: a call that died without BYE leaves the panel busy (486)
+            // for a while, and rapid repeated calls stop its video for minutes.
+            if (s.nextReopen && Date.now() < s.nextReopen) return;
             s.reopenAttempts = (s.reopenAttempts || 0) + 1;
-            if (s.reopenAttempts > 3) {
-              this.log.error('HomeKit source unavailable after three reopen attempts');
+            if (s.reopenAttempts > 5) {
+              this.log.error('HomeKit source unavailable after five reopen attempts');
               await this.stop(s.id);
               return;
             }
+            s.nextReopen = Date.now() + 5000 * s.reopenAttempts;
             this.log.info('HomeKit source ended: reopening SIP while preserving video session');
             s.pending = ipc.request(this.socketPath, 'start_call', {candidate:this.config.candidate||'1',session_id:s.id,video_port:port,
         ...(s.liveAudio ? {audio:true,audio_port:s.liveAudio.panelPort} : {})},5000);

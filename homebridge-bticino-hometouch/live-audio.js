@@ -63,6 +63,7 @@ class LiveAudio {
     await Promise.all(this.processes.map(child=>new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);})));
   }
   spawn(name,args) {
+    this.args={...this.args,[name]:args};
     const child=spawn(this.ffmpeg,args,{stdio:['ignore','ignore','pipe']});
     // Log the first FFmpeg messages with anything key-like removed.
     let lines=0;
@@ -73,7 +74,16 @@ class LiveAudio {
         this.log?.warn?.(`BTicino live audio ${name}: ${redact(line).slice(0,300)}`);
       }
     });
-    child.on('exit',(code,signal)=>{if(!this.stopping)this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}`);});
+    child.on('exit',(code,signal)=>{
+      this.processes=this.processes.filter(item=>item!==child);
+      if(this.stopping)return;
+      // The talk decoder ends after a few silent seconds while Home's microphone
+      // is muted; either direction must be there for the whole live view.
+      this.restarts=(this.restarts||0)+1;
+      if(this.restarts>60){this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}; no more restarts`);return;}
+      if(name!=='talk'||code!==0)this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}; restarting`);
+      this.restartTimer=setTimeout(()=>{if(!this.stopping)this.spawn(name,this.args[name]);},1000);
+    });
     this.processes.push(child);
   }
   // HomeKit microphone packets (SRTP/SRTCP) for the talk decoder.
@@ -86,6 +96,7 @@ class LiveAudio {
   async stop() {
     if(this.stopPromise)return this.stopPromise;
     this.stopping=true;
+    clearTimeout(this.restartTimer);
     this.stopPromise=(async()=>{
       await Promise.all(this.processes.map(child=>new Promise(resolve=>{
         if(child.exitCode!==null||child.signalCode!==null)return resolve();

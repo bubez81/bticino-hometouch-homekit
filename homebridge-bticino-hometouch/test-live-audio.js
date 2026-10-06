@@ -57,6 +57,12 @@ function frequency(samples,rate){let n=0;for(let i=1;i<samples.length;i++)if(sam
     assert(Math.abs(frequency(talkSamples,8000)-880)<35,`door got ${frequency(talkSamples,8000)} Hz`);
     assert(audio.talkPackets>0);
     relay.close();
+    // A converter that ends during the live view is started again.
+    const before=audio.processes.length;
+    audio.processes[audio.processes.length-1].kill('SIGKILL');
+    await new Promise(resolve=>setTimeout(resolve,1800));
+    assert.equal(audio.processes.length,before);
+    assert(audio.processes.every(child=>child.exitCode===null));
     console.log('LIVE_AUDIO_OK: panel 440Hz -> HomeKit Opus; HomeKit 880Hz -> door A-law');
   }finally{
     clearTimeout(timeout);await audio.stop();

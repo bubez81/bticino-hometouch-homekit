@@ -443,6 +443,8 @@ def main():
     sockets = []
     decoder = None
     sender = None
+    accepted = finished = False
+    dialog_file = identity = None
     try:
         for port in range(24000, 24100, 4):
             sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
@@ -650,6 +652,17 @@ def main():
                 print(f'Fotogramma privato: {decoder.frame}')
         for sock in sockets:
             sock.close()
+        if accepted and not finished and dialog_file is not None and dialog_file.exists():
+            # The SIP connection failed before the call was confirmed ended (for
+            # example the TLS link dropped): reconnect and end it now, otherwise
+            # the panel answers 486 Busy until it times the call out.
+            try:
+                if client.sock:
+                    client.sock.close()
+                client.connect()
+                end_stale_dialog(lib, client, identity, dialog_file, wait=5.0)
+            except Exception as exc:
+                print(f'STALE_BYE_FAILED={type(exc).__name__}', flush=True)
         if client.sock:
             client.sock.close()
 
