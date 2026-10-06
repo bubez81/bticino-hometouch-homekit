@@ -23,14 +23,14 @@ are identified until known calls actually provide a matching stable value.
 
 ## Existing records and gap
 
-Cubetto's preserved SIP files contain 26 INVITEs and 25 CANCELs. A redacted scan
+The test host's preserved SIP files contain 26 INVITEs and 25 CANCELs. A redacted scan
 found zero DEVADDR-bearing messages. No later responses/updates are present in
 that archive. The archive alone cannot establish what was exchanged later in
 the calls or what the official app received on its own endpoint.
 
 ## Installed observation
 
-`entrance_signaling_diagnostics=true` on Cubetto. `SIPStream.read_message` now
+`entrance_signaling_diagnostics=true` on the test host. `SIPStream.read_message` now
 observes received messages before any register/dialog/request dispatch. Logs
 `ENTRANCE SIGNAL v2` in listener.log/stdout: keyed Call-ID token, method, status,
 CSeq, body/SDP presence, keyed DEVADDR token and session/media scope. Matches

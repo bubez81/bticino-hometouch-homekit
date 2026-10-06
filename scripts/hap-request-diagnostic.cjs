@@ -1,5 +1,5 @@
 'use strict';
-// Temporary, metadata-only tracing for the isolated Cubetto test bridge.
+// Temporary, metadata-only tracing for the isolated test bridge.
 const { Accessory } = require('/usr/local/lib/node_modules/homebridge/node_modules/@homebridge/hap-nodejs');
 const trace = message => console.log(`[HAP-DIAG] ${message}`);
 for (const method of ['handleAccessories', 'handleResource', 'handleSetCharacteristics', 'handleGetCharacteristics']) {

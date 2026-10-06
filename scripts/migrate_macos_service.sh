@@ -2,7 +2,7 @@
 set -eu
 
 base=/opt/bticino-sniffer
-legacy_label=${BTICINO_LEGACY_LABEL:-io.galanti.bticino-sniffer}
+legacy_label=${BTICINO_LEGACY_LABEL:?Indicare il servizio storico con BTICINO_LEGACY_LABEL=<label>}
 new_label=io.github.bubez81.bticino-hometouch
 legacy_plist=/Library/LaunchDaemons/$legacy_label.plist
 new_plist=/Library/LaunchDaemons/$new_label.plist
