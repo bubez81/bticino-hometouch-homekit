@@ -153,32 +153,83 @@ def audio_answer(raw):
     return payload, crypto.group(1), crypto.group(2)
 
 
+TALK_PORT = 22310
+ALAW_SILENCE = 0xD5
+TALK_MAX_BACKLOG = 4000  # 0.5 s of 8 kHz A-law: older talk audio is dropped
+
+
 class AudioSender:
-    """Sends encrypted Speex silence, as a phone microphone would.
+    """Sends the client's audio as encrypted Speex, as a phone would.
 
     The gateway only transmits the entrance panel's audio while it receives
-    audio from the client. FFmpeg encodes and SRTP-protects silence to a local
-    port; the probe relays those packets from its own audio sockets, so the
-    gateway sees one symmetric RTP/RTCP flow.
+    audio from the client, so the probe always sends a continuous 8 kHz A-law
+    stream: talk audio received on loopback UDP TALK_PORT (from the go2rtc
+    backchannel relay) when there is any, silence otherwise. FFmpeg encodes it
+    to Speex and SRTP-protects it to a local port; the probe relays those
+    packets from its own audio sockets, so the gateway sees one symmetric
+    RTP/RTCP flow. FFmpeg reads stdin, so it ends with the probe.
     """
-    def __init__(self, ffmpeg, local_material, seconds):
+    def __init__(self, ffmpeg, local_material, talk_port=TALK_PORT, clock=time.monotonic):
         self.rtp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtcp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtp.bind(('127.0.0.1', 0))
         self.rtcp.bind(('127.0.0.1', self.rtp.getsockname()[1] + 1))
         self.rtp.setblocking(False)
         self.rtcp.setblocking(False)
+        self.talk = None
+        if talk_port:
+            self.talk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                self.talk.bind(('127.0.0.1', talk_port))
+                self.talk.setblocking(False)
+            except OSError:
+                self.talk.close()
+                self.talk = None
+        self.backlog = bytearray()
+        self.talk_bytes = 0
+        self.clock = clock
+        self.started = None
+        self.written = 0
         port = self.rtp.getsockname()[1]
-        # The time limit ends the encoder even if the probe is killed.
-        self.process = subprocess.Popen([ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-re',
-            '-f', 'lavfi', '-t', str(seconds), '-i', 'anullsrc=r=8000:cl=mono', '-c:a', 'libspeex', '-ar', '8000', '-ac', '1',
+        self.process = subprocess.Popen([ffmpeg, '-hide_banner', '-loglevel', 'error',
+            '-f', 'alaw', '-ar', '8000', '-ac', '1', '-i', 'pipe:0', '-c:a', 'libspeex', '-ar', '8000', '-ac', '1',
             '-frames_per_packet', '1', '-vad', '0', '-dtx', '0', '-payload_type', str(SPEEX_PAYLOAD),
-            '-f', 'rtp', '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
+            '-flush_packets', '1', '-f', 'rtp', '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
             '-srtp_out_params', base64.b64encode(local_material).decode(),
             f'srtp://127.0.0.1:{port}?rtcpport={port+1}&pkt_size=1316'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+
+    def pump(self):
+        """Write the samples due since the start: talk audio first, then silence."""
+        if self.talk is not None:
+            while True:
+                try:
+                    data = self.talk.recv(65535)
+                except BlockingIOError:
+                    break
+                self.backlog += data
+                self.talk_bytes += len(data)
+            if len(self.backlog) > TALK_MAX_BACKLOG:
+                del self.backlog[:len(self.backlog) - TALK_MAX_BACKLOG]
+        now = self.clock()
+        if self.started is None:
+            self.started = now
+        due = round((now - self.started) * 8000) + 160 - self.written
+        if due < 160:
+            return 0
+        chunk = bytes(self.backlog[:due])
+        del self.backlog[:len(chunk)]
+        chunk += bytes([ALAW_SILENCE]) * (due - len(chunk))
+        try:
+            self.process.stdin.write(chunk)
+            self.process.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            return 0
+        self.written += due
+        return due
 
     def relay(self, audio, audio_rtcp, destinations):
+        self.pump()
         sent = 0
         for source, target, destination in ((self.rtp, audio, destinations[0]), (self.rtcp, audio_rtcp, destinations[1])):
             while True:
@@ -191,6 +242,10 @@ class AudioSender:
         return sent
 
     def close(self):
+        try:
+            self.process.stdin.close()
+        except OSError:
+            pass
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -198,6 +253,96 @@ class AudioSender:
             except subprocess.TimeoutExpired:
                 self.process.kill(); self.process.wait()
         self.rtp.close(); self.rtcp.close()
+        if self.talk is not None:
+            self.talk.close()
+
+
+DIALOG_FILE = 'camera-dialog.json'
+
+
+def dialog_path(lib):
+    directory = getattr(lib, 'RUNTIME_DIR', None)
+    return Path(directory) / DIALOG_FILE if directory else None
+
+
+def save_dialog(path, record):
+    """Remember how to end the accepted call, in case this process is killed."""
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.tmp')
+        with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as handle:
+            json.dump(record, handle)
+        temporary.replace(path)
+    except OSError:
+        pass
+
+
+def load_dialog(path):
+    if path is None:
+        return None
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    keys = ('call_id', 'from_tag', 'to', 'target', 'routes', 'cseq')
+    if not isinstance(record, dict) or any(key not in record for key in keys):
+        return None
+    if not all(isinstance(record[key], str) for key in keys[:4]) or not isinstance(record['cseq'], int):
+        return None
+    if any(c in ''.join([record[key] for key in keys[:4]] + list(record['routes'])) for c in '\r\n'):
+        return None
+    return record
+
+
+def clear_dialog(path):
+    if path is not None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def sip_request(client, identity, method, target, to, call_id, from_tag, seq, via_branch,
+                content='', auth=None, routes=()):
+    lines = [f'{method} {target} SIP/2.0',
+             f'Via: SIP/2.0/TLS {client.local_ip}:{client.local_port};branch={via_branch};rport',
+             'Max-Forwards: 70', f'From: {identity};tag={from_tag}',
+             f'To: {to}', f'Call-ID: {call_id}', f'CSeq: {seq} {method}',
+             f'Contact: <sip:{client.username}@{client.local_ip}:{client.local_port};transport=tls>']
+    lines.extend('Route: '+r for r in routes)
+    if auth:
+        lines.append(auth)
+    if content:
+        lines.append('Content-Type: application/sdp')
+    return '\r\n'.join(lines + [f'Content-Length: {len(content.encode())}', '', content])
+
+
+def end_stale_dialog(lib, client, identity, path, wait=3.0):
+    """Send BYE for a call a killed probe left open, so the panel is free again."""
+    record = load_dialog(path)
+    if record is None:
+        clear_dialog(path)
+        return None
+    client.send(sip_request(client, identity, 'BYE', record['target'], record['to'], record['call_id'],
+                            record['from_tag'], record['cseq'] + 1, 'z9hG4bK' + uuid.uuid4().hex,
+                            routes=record['routes']))
+    status = None
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            raw = client.stream.read_message(timeout=0.2)
+        except socket.timeout:
+            continue
+        headers, _ = lib.sip_headers(raw)
+        if headers.get('call-id') == record['call_id'] and lib.status_code(raw) is not None:
+            status = lib.status_code(raw)
+            if status >= 200:
+                break
+    clear_dialog(path)
+    print(f'STALE_BYE status={status}', flush=True)
+    return status
 
 
 def prime_media(udp, rtcp, destinations):
@@ -273,6 +418,7 @@ def main():
     # at import time. Otherwise SIGTERM is swallowed, the call is killed without
     # BYE and its FFmpeg children are orphaned.
     stopping = False
+    parent = os.getppid()
     def stop_requested(signum, frame):
         nonlocal stopping
         stopping = True
@@ -309,6 +455,8 @@ def main():
         client.connect()
         uri = f'sip:MHT@{gateway}'
         identity = f'<sip:{client.username}@{lib.DOMAIN}>'
+        dialog_file = dialog_path(lib)
+        end_stale_dialog(lib, client, identity, dialog_file)
         call = uuid.uuid4().hex + '@camera-probe'
         tag = uuid.uuid4().hex
         branch = 'z9hG4bK' + uuid.uuid4().hex
@@ -318,17 +466,8 @@ def main():
         body = offer(client.local_ip, port, rows[args.candidate-1],
                      base64.b64encode(local_material).decode(), audio=args.audio)
         def request(method, target, to, seq, via_branch, content='', auth=None, routes=()):
-            lines = [f'{method} {target} SIP/2.0',
-                     f'Via: SIP/2.0/TLS {client.local_ip}:{client.local_port};branch={via_branch};rport',
-                     'Max-Forwards: 70', f'From: {identity};tag={tag}',
-                     f'To: {to}', f'Call-ID: {call}', f'CSeq: {seq} {method}',
-                     f'Contact: <sip:{client.username}@{client.local_ip}:{client.local_port};transport=tls>']
-            lines.extend('Route: '+r for r in routes)
-            if auth:
-                lines.append(auth)
-            if content:
-                lines.append('Content-Type: application/sdp')
-            return '\r\n'.join(lines + [f'Content-Length: {len(content.encode())}', '', content])
+            return sip_request(client, identity, method, target, to, call, tag, seq, via_branch,
+                               content, auth, routes)
         client.send(request('INVITE', uri, f'<{uri}>', cseq, branch, body))
         deadline = time.monotonic()+20
         accepted = False
@@ -389,6 +528,9 @@ def main():
                       if line.lower().startswith('record-route:')][::-1]
             client.send(request('ACK', target, to, cseq, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
             if not accepted:
+                save_dialog(dialog_file, {'call_id': call, 'from_tag': tag, 'to': to, 'target': target,
+                                          'routes': routes, 'cseq': cseq})
+            if not accepted:
                 accepted = True
                 remote_audio = audio_answer(raw) if args.audio and not cancelled else None
                 audio_destinations = None
@@ -397,7 +539,7 @@ def main():
                 if remote_audio:
                     try:
                         audio_destinations = media_destinations(raw, 'audio')
-                        sender = AudioSender(audio_ffmpeg, local_material, args.duration + 15)
+                        sender = AudioSender(audio_ffmpeg, local_material)
                     except (ValueError, OSError) as exc:
                         print(f'AUDIO_START_FAILED={type(exc).__name__}', flush=True)
                         remote_audio = None
@@ -454,10 +596,14 @@ def main():
                                     decoder.feed_audio(data, rtcp=is_rtcp)
                     now = time.monotonic()
                     if now >= next_media_report:
-                        print(f'{time.strftime("%H:%M:%S")} MEDIA_PROGRESS rtp_packets={packets} audio_packets={audio_packets} decoder_running={decoder is not None and decoder.process.poll() is None}', flush=True)
+                        print(f'{time.strftime("%H:%M:%S")} MEDIA_PROGRESS rtp_packets={packets} audio_packets={audio_packets} talk_bytes={sender.talk_bytes if sender else 0} decoder_running={decoder is not None and decoder.process.poll() is None}', flush=True)
                         next_media_report = now+10
                     if now >= next_signal_poll:
                         next_signal_poll = now+0.2
+                        if os.getppid() != parent:
+                            # The listener that started this call is gone: end it cleanly.
+                            print(f'{time.strftime("%H:%M:%S")} PARENT_GONE', flush=True)
+                            stopping = True
                         try:
                             incoming = client.stream.read_message(timeout=0.001)
                         except socket.timeout:
@@ -482,6 +628,8 @@ def main():
                     break
                 client.send(request('BYE', target, to, cseq+1, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
                 deadline = time.monotonic()+5
+        if finished:
+            clear_dialog(dialog_file)
         print(f'{time.strftime("%H:%M:%S")} PROBE accepted={accepted} rtp_packets={packets} audio_packets={audio_packets} cancel_sent={cancelled} termination_confirmed={finished}')
         print('Prova isolata: non conferma HomeKit live.')
     finally:

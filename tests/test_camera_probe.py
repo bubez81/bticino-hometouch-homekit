@@ -99,11 +99,11 @@ class ProbeTests(unittest.TestCase):
         import socket
         from unittest.mock import Mock
         with patch.object(probe.subprocess, 'Popen', return_value=Mock(poll=Mock(return_value=0))) as launch:
-            sender = probe.AudioSender('ffmpeg-speex', b'\x01' * 30, 35)
+            sender = probe.AudioSender('ffmpeg-speex', b'\x01' * 30, talk_port=0)
         command = launch.call_args.args[0]
         self.assertIn('libspeex', command)
         self.assertEqual(command[command.index('-payload_type') + 1], '97')
-        self.assertEqual(command[command.index('-t') + 1], '35')
+        self.assertEqual(command[command.index('-i') + 1], 'pipe:0')
         self.assertNotIn('\x01', ' '.join(command))
         encoder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         encoder.sendto(b'srtp', sender.rtp.getsockname())
@@ -116,6 +116,49 @@ class ProbeTests(unittest.TestCase):
         rtcp_out.sendto.assert_called_once_with(b'srtcp', ('192.0.2.1', 30003))
         encoder.close()
         sender.close()
+
+    def test_audio_sender_paces_silence_and_mixes_talk_first(self):
+        import socket, time
+        from unittest.mock import Mock
+        clock = Mock(side_effect=[100.0, 100.1, 100.1005, 120.0])
+        listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        listener.close()
+        process = Mock(poll=Mock(return_value=0))
+        with patch.object(probe.subprocess, 'Popen', return_value=process):
+            sender = probe.AudioSender('ffmpeg-speex', b'\x01' * 30, talk_port=port, clock=clock)
+        self.assertEqual(sender.pump(), 160)  # start: one 20 ms frame ahead
+        self.assertEqual(process.stdin.write.call_args.args[0], bytes([0xD5]) * 160)
+        talk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        talk.sendto(b'\x11' * 100, ('127.0.0.1', port))
+        time.sleep(0.05)
+        self.assertEqual(sender.pump(), 800)  # 100 ms later
+        chunk = process.stdin.write.call_args.args[0]
+        self.assertEqual(chunk[:100], b'\x11' * 100)
+        self.assertEqual(chunk[100:], bytes([0xD5]) * 700)
+        self.assertEqual(sender.talk_bytes, 100)
+        self.assertEqual(sender.pump(), 0)  # not yet due
+        talk.sendto(b'\x22' * 9000, ('127.0.0.1', port))
+        time.sleep(0.05)
+        self.assertGreater(sender.pump(), 0)
+        self.assertLessEqual(process.stdin.write.call_args.args[0].count(b'\x22'), probe.TALK_MAX_BACKLOG)
+        talk.close()
+        sender.close()
+        process.stdin.close.assert_called_once()
+
+    def test_dialog_record_is_private_and_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = probe.dialog_path(SimpleNamespace(RUNTIME_DIR=tmp))
+            record = {'call_id': 'c', 'from_tag': 't', 'to': '<sip:a@b>', 'target': 'sip:a@b', 'routes': [], 'cseq': 3}
+            probe.save_dialog(path, record)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(probe.load_dialog(path), record)
+            probe.save_dialog(path, dict(record, target='sip:a@b\r\nInjected: x'))
+            self.assertIsNone(probe.load_dialog(path))
+            probe.clear_dialog(path)
+            self.assertFalse(path.exists())
+        self.assertIsNone(probe.dialog_path(SimpleNamespace()))
 
     def test_accepted_session_ack_and_bye(self):
         sent = []
@@ -144,9 +187,13 @@ class ProbeTests(unittest.TestCase):
                 return ('SIP/2.0 200 OK\r\n'+call+'\r\n'+seq+'\r\nTo: <sip:MHT@gateway.example>;tag=remote\r\nContact: <sip:MHT@gateway.example>\r\n\r\n'+body).encode()
         def headers(raw):
             return {k.lower(): v.strip() for k, v in (x.split(':', 1) for x in raw.decode().splitlines()[1:] if ':' in x)}, {}
-        lib = SimpleNamespace(HomtouchListener=Client, DOMAIN='example',
+        runtime = tempfile.mkdtemp()
+        lib = SimpleNamespace(HomtouchListener=Client, DOMAIN='example', RUNTIME_DIR=runtime,
                               sip_headers=headers, status_code=lambda raw: 200,
                               sip_first_line=lambda raw: raw.decode().splitlines()[0])
+        stale = {'call_id': 'stale@camera-probe', 'from_tag': 'oldtag', 'to': '<sip:MHT@gateway.example>;tag=r',
+                 'target': 'sip:MHT@gateway.example', 'routes': ['<sip:proxy.example;lr>'], 'cseq': 1}
+        (Path(runtime) / probe.DIALOG_FILE).write_text(json.dumps(stale))
         ticks = iter(i * 0.25 for i in range(1000))
         installed = []
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,7 +201,14 @@ class ProbeTests(unittest.TestCase):
             path.write_text(json.dumps({'candidates': [{'cid': '10050', 'devaddr': '200'}]}))
             with patch.object(probe.importlib.util, 'module_from_spec', return_value=lib), patch.object(probe.importlib.util, 'spec_from_file_location', return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda m: probe.signal.signal(probe.signal.SIGTERM, 'listener')))), patch.object(probe.signal, 'signal', side_effect=lambda sig, handler: installed.append((sig, handler))), patch.object(probe.socket, 'socket', return_value=Sock()), patch.object(probe.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(probe.time, 'sleep'), patch('sys.argv', ['probe', '--candidates', str(path), '--candidate', '1']), redirect_stdout(io.StringIO()) as out:
                 probe.main()
-        self.assertEqual([m.split()[0] for m in sent], ['INVITE', 'ACK', 'BYE'])
+        self.assertEqual([m.split()[0] for m in sent], ['BYE', 'INVITE', 'ACK', 'BYE'])
+        # A call left open by a killed probe is ended first, with its own dialog.
+        self.assertIn('Call-ID: stale@camera-probe', sent[0])
+        self.assertIn('CSeq: 2 BYE', sent[0])
+        self.assertIn('Route: <sip:proxy.example;lr>', sent[0])
+        self.assertIn('STALE_BYE status=200', out.getvalue())
+        # The accepted call was confirmed ended, so nothing is left to clean up.
+        self.assertFalse((Path(runtime) / probe.DIALOG_FILE).exists())
         self.assertIn('termination_confirmed=True', out.getvalue())
         self.assertNotIn('REGISTER', ''.join(sent))
         # The probe's own SIGTERM handler must win over the one the listener module installs.

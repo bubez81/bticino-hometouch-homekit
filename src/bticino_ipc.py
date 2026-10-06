@@ -93,9 +93,11 @@ def handle_request(request: dict) -> dict:
                 command.append("--audio")
             log = open_camera_log(f"start_call candidate={candidate} audio={'--audio' in command}")
             try:
+                # Own session: a listener restart must not kill the call before it
+                # sends BYE; the probe ends the call itself when the listener is gone.
                 _call_process = subprocess.Popen(command, stdout=log or subprocess.DEVNULL,
                                                  stderr=subprocess.STDOUT if log else subprocess.DEVNULL,
-                                                 env=environment)
+                                                 env=environment, start_new_session=True)
             finally:
                 if log:
                     log.close()

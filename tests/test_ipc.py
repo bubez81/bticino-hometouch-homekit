@@ -39,6 +39,7 @@ class IpcTests(unittest.TestCase):
             self.assertIn('start_call candidate=1 audio=True', log.read_text())
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
             self.assertEqual(spawn.call_args.kwargs['stderr'], bticino_ipc.subprocess.STDOUT)
+            self.assertTrue(spawn.call_args.kwargs['start_new_session'])
 
     def test_stop_allows_sip_cleanup_before_kill(self):
         process = Mock()
