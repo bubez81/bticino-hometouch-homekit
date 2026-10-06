@@ -100,6 +100,7 @@ class ProbeTests(unittest.TestCase):
                                          audio=('97', '1', 'AUDIO_KEY'))
             command = launch.call_args.args[0]
             self.assertIn('udp://127.0.0.1:40010?pkt_size=640', command)
+            self.assertNotIn('libopus', command)  # video stream stays video only
             self.assertEqual(command[command.index('pcm_s16le') - 4:command.index('pcm_s16le')], ['-map', '0:a:0', '-vn', '-c:a'])
             decoder.close()
 

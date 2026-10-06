@@ -64,8 +64,10 @@ class FrameDecoder:
                 '-i', str(self.sdp), '-map', '0:v:0']
             if stream:
                 # Entrance-panel audio is transcoded to Opus, the codec WebRTC players accept.
+                # With a separate audio port the stream stays video only: a declared
+                # but silent audio track would stop the player from starting the video.
                 command += (['-map', '0:a:0', '-c:a', 'libopus', '-ar', '48000', '-ac', '1', '-b:a', '32k']
-                            if audio else ['-an'])
+                            if audio and not self.audio_port else ['-an'])
                 command += ['-c:v', 'copy', '-flush_packets', '1', '-muxdelay', '0', '-f', 'mpegts',
                             f'udp://127.0.0.1:{self.stream_port}?pkt_size=1316']
             else:
