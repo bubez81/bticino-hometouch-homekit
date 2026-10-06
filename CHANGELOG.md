@@ -75,6 +75,11 @@ release or npm publication is implied.
 
 ### Fixed
 
+- Ring blueprint: every real ring stopped with `UndefinedError: 'context' is
+  undefined`, so Home Assistant sent no notification. The notification tag now
+  uses the run time. Re-import the blueprint. `tests_ha` now runs the
+  automation end to end (ring, notification with the entrance that rang,
+  opening from the notification button) instead of validating the schema only.
 - Homebridge plugin: random RTP SSRCs above 2^31-1 made FFmpeg refuse the
   stream ("Error setting option ssrc … Result too large"), so about half of
   the Apple Home live views lost their audio after a few seconds, and the same

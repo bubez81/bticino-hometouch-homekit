@@ -84,7 +84,8 @@ variables:
   notify_devices: !input notify_devices
   title: !input title
   message: !input message
-  prefix: "BTICINO_{{ context.id }}"
+  # Unique per run: ties the notification buttons to this ring.
+  prefix: "BTICINO_{{ now().timestamp() | int }}"
 
 triggers:
   - trigger: event.received
