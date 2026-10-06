@@ -85,10 +85,12 @@ The camera streams live when the listener advertises an RTSP source:
 
 The source starts only while someone watches. During a ring it relays the
 call's video; otherwise it places an on-demand camera call and closes it when
-the last viewer leaves. If no video arrives within 12 seconds it retries once,
-because a call started while the previous one is still closing may carry no
-media. If the camera is busy (for example Apple Home is viewing) it shows the
-latest snapshot instead. Expect the first image after about 5 seconds.
+the last viewer leaves. It never retries a camera call, because frequent
+back-to-back calls were seen to stop delivering video for minutes: when the
+camera is busy (for example Apple Home is viewing), when the previous call ended
+less than 20 seconds ago, or when no video arrives within 12 seconds, it shows
+the latest snapshot instead. Expect the first image after about 5 seconds. Add
+`--log <file>` to the stream command to see what the source did.
 
 ## 6. MQTT locks and HomeKit
 

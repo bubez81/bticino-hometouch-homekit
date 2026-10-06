@@ -7,11 +7,14 @@ into FFmpeg's stdin, and FFmpeg publishes H.264 to go2rtc's RTSP `{output}`:
 
 - during an incoming call, the call's early-media video (local UDP feed);
 - otherwise an on-demand camera call through the listener IPC (`start_call`),
-  closed again with `stop_call`. If no video arrives in time the call is
-  closed and retried once, because a call started while the previous one is
-  still being torn down may carry no media;
-- if the camera call is refused (for example Apple Home is already viewing),
-  the local feed, which then repeats the latest snapshot.
+  closed again with `stop_call`;
+- the local feed, which repeats the latest snapshot, when the camera call is
+  refused (for example Apple Home is already viewing), when the previous call
+  ended less than CALL_COOLDOWN seconds ago, or when the call brings no video
+  within FIRST_VIDEO_TIMEOUT. Frequent back-to-back camera calls were observed
+  to stop delivering video for a while, so this source never retries a call:
+  it keeps the stream alive with the snapshot instead, which also stops
+  clients from reopening it in a loop.
 
 Relaying through stdin means FFmpeg ends as soon as this program ends. A small
 watchdog process closes an on-demand call even if this program is killed.
@@ -32,8 +35,9 @@ import time
 DEFAULT_SOCKET = '/tmp/bticino-hometouch.sock'
 LOCAL_FEED_PORT = 22300
 FIRST_VIDEO_TIMEOUT = 12.0
-RETRY_PAUSE = 5.0
 STALL_TIMEOUT = 15.0
+CALL_COOLDOWN = 20.0
+COOLDOWN_FILE = '/tmp/bticino-live-source-last-call'
 
 
 def ipc_request(path, request, timeout=12):
@@ -68,13 +72,24 @@ def ffmpeg_command(ffmpeg, output):
             '-f', 'rtsp', '-rtsp_transport', 'tcp', output]
 
 
+LOG_FILE = None
+
+
 def log(message):
-    print(time.strftime('%Y-%m-%d %H:%M:%S'), 'live-source:', message, file=sys.stderr, flush=True)
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} live-source[{os.getpid()}]: {message}"
+    print(line, file=sys.stderr, flush=True)
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, 'a', encoding='utf-8') as handle:
+                handle.write(line + '\n')
+        except OSError:
+            pass
 
 
 class LiveSource:
     def __init__(self, ipc, ffmpeg, output, candidate='1', spawn=subprocess.Popen,
-                 open_udp=udp_socket, clock=time.monotonic, sleep=time.sleep, watchdog=None):
+                 open_udp=udp_socket, clock=time.monotonic, watchdog=None,
+                 cooldown_file=COOLDOWN_FILE, wall=time.time):
         self.ipc = ipc
         self.ffmpeg = ffmpeg
         self.output = output
@@ -82,8 +97,9 @@ class LiveSource:
         self.spawn = spawn
         self.open_udp = open_udp
         self.clock = clock
-        self.sleep = sleep
         self.watchdog = watchdog
+        self.cooldown_file = cooldown_file
+        self.wall = wall
         self.session = f'go2rtc-{os.getpid()}'
         self.call_started = False
         self.process = None
@@ -111,6 +127,27 @@ class LiveSource:
             self.ipc({'command': 'stop_call', 'session_id': self.session})
         except (OSError, ValueError) as error:
             log(f'stop_call non riuscito: {error}')
+        try:
+            with open(self.cooldown_file, 'w', encoding='utf-8') as handle:
+                handle.write(str(self.wall()))
+        except OSError:
+            pass
+
+    def _cooling_down(self):
+        try:
+            with open(self.cooldown_file, encoding='utf-8') as handle:
+                ended = float(handle.read().strip() or 0)
+        except (OSError, ValueError):
+            return False
+        return self.wall() - ended < CALL_COOLDOWN
+
+    def _use_local_feed(self, reason):
+        log(f'{reason}; mostro l\'ultima immagine')
+        self._stop_call()
+        if self.udp is not None:
+            self.udp.close()
+        self.udp = self.open_udp(LOCAL_FEED_PORT)
+        self.mode = 'local'
 
     def choose_feed(self):
         """Open the UDP feed, starting an on-demand call when possible."""
@@ -125,15 +162,15 @@ class LiveSource:
         if self.mode in ('incoming', 'local'):
             self.udp = self.open_udp(LOCAL_FEED_PORT)
             return self.mode
+        if self._cooling_down():
+            self._use_local_feed('chiamata precedente troppo recente')
+            return self.mode
         self.udp = self.open_udp(0)
         result = self._start_call()
         if result.get('ok'):
             self.mode = 'on_demand'
         else:
-            log(f'chiamata a richiesta non avviata ({result.get("error")}); uso il flusso locale')
-            self.udp.close()
-            self.udp = self.open_udp(LOCAL_FEED_PORT)
-            self.mode = 'local'
+            self._use_local_feed(f'chiamata a richiesta non avviata ({result.get("error")})')
         return self.mode
 
     def start(self):
@@ -146,22 +183,13 @@ class LiveSource:
         """Copy UDP datagrams to FFmpeg until it exits, the feed stalls or we stop."""
         started = self.clock()
         last = None
-        retried = False
         while running() and self.process.poll() is None:
             try:
                 data, _ = self.udp.recvfrom(65536)
             except socket.timeout:
                 now = self.clock()
                 if last is None and self.mode == 'on_demand' and now - started > FIRST_VIDEO_TIMEOUT:
-                    if retried:
-                        log('nessun video dalla telecamera; chiudo')
-                        return 'no_video'
-                    log('nessun video dalla telecamera; richiamo')
-                    self._stop_call()
-                    self.sleep(RETRY_PAUSE)
-                    retried = True
-                    if not self._start_call().get('ok'):
-                        return 'no_video'
+                    self._use_local_feed('nessun video dalla telecamera')
                     started = self.clock()
                 elif last is not None and now - last > STALL_TIMEOUT:
                     log('video interrotto; chiudo')
@@ -218,7 +246,10 @@ def main():
     parser.add_argument('--ffmpeg', default='ffmpeg')
     parser.add_argument('--socket', default=DEFAULT_SOCKET)
     parser.add_argument('--candidate', default='1', choices=['1', '2', '3', '4'])
+    parser.add_argument('--log', help='append diagnostics to this file (go2rtc hides stderr)')
     args = parser.parse_args()
+    global LOG_FILE
+    LOG_FILE = args.log
     source = LiveSource(lambda request: ipc_request(args.socket, request), args.ffmpeg,
                         args.output, args.candidate, watchdog=watchdog_process(args.socket))
     state = {'running': True}
@@ -229,6 +260,7 @@ def main():
     signal.signal(signal.SIGTERM, finish)
     signal.signal(signal.SIGINT, finish)
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    log('avvio richiesto da go2rtc')
     source.start()
     try:
         log(f'fine: {source.relay(lambda: state["running"])}')

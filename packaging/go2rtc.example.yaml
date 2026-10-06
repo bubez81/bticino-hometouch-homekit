@@ -11,4 +11,4 @@ webrtc:
 log:
   level: info
 streams:
-  videocitofono: "exec:/usr/bin/python3 /opt/bticino-go2rtc/bticino_live_source.py --ffmpeg /opt/homebrew/bin/ffmpeg --output {output}"
+  videocitofono: "exec:/usr/bin/python3 /opt/bticino-go2rtc/bticino_live_source.py --ffmpeg /opt/homebrew/bin/ffmpeg --output {output} --log /opt/bticino-go2rtc/live-source.log"

@@ -1,5 +1,7 @@
+import os
 import socket
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -101,8 +103,11 @@ class LiveSourceTests(unittest.TestCase):
             def terminate(guard):
                 guard.terminated = True
 
+        self.cooldown = os.path.join(tempfile.mkdtemp(), 'last-call')
+        self.wall_time = 1000.0
         return LiveSource(ipc, '/usr/bin/ffmpeg', 'rtsp://127.0.0.1:8554/out', spawn=spawn,
-                          open_udp=open_udp, clock=Clock(), sleep=lambda s: None, watchdog=Guard)
+                          open_udp=open_udp, clock=Clock(), watchdog=Guard,
+                          cooldown_file=self.cooldown, wall=lambda: self.wall_time)
 
     def commands(self):
         return [r['command'] for r in self.requests]
@@ -136,24 +141,40 @@ class LiveSourceTests(unittest.TestCase):
         self.assertTrue(self.guards[0].terminated)
         self.assertEqual(self.commands(), ['incoming_status', 'start_call', 'stop_call'])
 
-    def test_no_video_retries_once_then_gives_up(self):
-        source = self.make({'incoming_status': {'ok': True, 'incoming': None},
-                            'start_call': {'ok': True}, 'stop_call': {'ok': True}}, [None] * 100)
-        source.start()
-        self.assertEqual(source.relay(), 'no_video')
-        source.stop()
-        self.assertEqual(self.commands(), ['incoming_status', 'start_call', 'stop_call',
-                                           'start_call', 'stop_call'])
-
-    def test_retry_that_brings_video_keeps_streaming(self):
-        script = [None] * 13 + [b'late-video']
+    def test_no_video_closes_call_and_shows_snapshot_without_retrying(self):
+        script = [None] * 13 + [b'snapshot']
         source = self.make({'incoming_status': {'ok': True, 'incoming': None},
                             'start_call': {'ok': True}, 'stop_call': {'ok': True}}, script)
         source.start()
         calls = iter([True] * 15 + [False])
         self.assertEqual(source.relay(lambda: next(calls)), 'stopped')
-        self.assertEqual(self.spawned[0].stdin.data, b'late-video')
-        self.assertEqual(self.commands().count('start_call'), 2)
+        self.assertEqual(source.mode, 'local')
+        self.assertEqual(self.sockets[-1].port, LOCAL_FEED_PORT)
+        self.assertEqual(self.spawned[0].stdin.data, b'snapshot')
+        self.assertEqual(self.commands(), ['incoming_status', 'start_call', 'stop_call'])
+        source.stop()
+        self.assertEqual(self.commands().count('stop_call'), 1)
+
+    def test_recent_call_shows_snapshot_without_calling(self):
+        source = self.make({'incoming_status': {'ok': True, 'incoming': None},
+                            'start_call': {'ok': True}})
+        with open(self.cooldown, 'w') as handle:
+            handle.write(str(self.wall_time - 5))
+        self.assertEqual(source.start(), 'local')
+        self.assertNotIn('start_call', self.commands())
+        self.wall_time += 30
+        other = self.make({'incoming_status': {'ok': True, 'incoming': None}, 'start_call': {'ok': True}})
+        with open(self.cooldown, 'w') as handle:
+            handle.write(str(self.wall_time - 30))
+        self.assertEqual(other.start(), 'on_demand')
+
+    def test_stop_records_call_end_for_cooldown(self):
+        source = self.make({'incoming_status': {'ok': True, 'incoming': None},
+                            'start_call': {'ok': True}, 'stop_call': {'ok': True}})
+        source.start()
+        source.stop()
+        with open(self.cooldown) as handle:
+            self.assertEqual(float(handle.read()), self.wall_time)
 
     def test_stall_after_video_ends_stream(self):
         source = self.make({'incoming_status': {'ok': True, 'incoming': {'state': 'established'}}},
