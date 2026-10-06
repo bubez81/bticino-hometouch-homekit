@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote
@@ -455,6 +455,19 @@ def api_snapshot(width=None, height=None):
     except (OSError, subprocess.TimeoutExpired):
         return image
     return result.stdout if result.returncode == 0 and result.stdout else image
+
+
+def last_ring_from_snapshots():
+    """UTC ISO time of the newest ring snapshot, from its local-time file name."""
+    newest = None
+    for path in SNAPSHOT_DIR.glob("*.jpg"):
+        match = re.match(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})_", path.name)
+        if match and (newest is None or match.group(1) > newest):
+            newest = match.group(1)
+    if newest is None:
+        return None
+    local = datetime.strptime(newest, "%Y-%m-%d_%H-%M-%S").astimezone()
+    return local.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def api_info():
@@ -2025,6 +2038,10 @@ def main():
         if len(ENTRANCE_PROFILES) < 2:
             raise RuntimeError("classificazione ingressi attiva ma servono almeno due profili")
     snapshot_server = start_snapshot_server()
+    try:
+        API_BUS.seed_last_ring(last_ring_from_snapshots())
+    except (OSError, ValueError) as exc:
+        log(f"Ultima suonata non ripristinata: {type(exc).__name__}")
     api_server = bticino_api.start(CONFIG, API_BUS, api_info, api_command, api_snapshot, log=log)
     start_post_call_fallback(latest_snapshot())
 
