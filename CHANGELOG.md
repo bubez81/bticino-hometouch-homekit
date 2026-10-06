@@ -6,6 +6,30 @@ release or npm publication is implied.
 
 ## 2026-10-06
 
+### Added
+
+- Live video for Home Assistant through go2rtc. `src/bticino_live_source.py` is
+  a go2rtc `exec:` source: during a ring it relays the call's video, otherwise
+  it places an on-demand camera call (`start_call`) and closes it when the last
+  viewer leaves. It retries once when no video arrives within 12 seconds, falls
+  back to the latest snapshot when the camera is busy, relays through FFmpeg's
+  stdin so no FFmpeg process outlives it, and starts a watchdog that closes the
+  camera call if the source is killed.
+- The API advertises an optional `live_rtsp_url` (listener `api.live_rtsp_url`,
+  validated by `validate_config.py`) to authenticated clients only. The Home
+  Assistant camera then supports streaming and plays it with WebRTC through
+  Home Assistant's built-in go2rtc.
+- `packaging/go2rtc.example.yaml` and a *Live video* section in
+  `docs/home-assistant.md`.
+
+### Validation
+
+- On the test installation the go2rtc RTSP stream delivered H.264 400×288 from
+  an on-demand camera call, and no process or call remained after the viewer
+  left. Three manual camera calls each delivered about 575 RTP packets in 25 s.
+  Calls started while the previous one was still closing delivered no video;
+  this motivates the retry.
+
 ### Fixed
 
 - After a listener restart the API reported no last ring until the next call,

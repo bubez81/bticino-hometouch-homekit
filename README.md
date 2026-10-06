@@ -68,7 +68,7 @@ The listener does all SIP and media work; pick one or both front ends.
 | Connects through | local IPC socket (same host) | authenticated network API (any host on the LAN) |
 | Ring notification | Apple Home, with snapshot (`standalone: true`) | Companion App via blueprint, with snapshot |
 | Opening | MQTT bridge + mqttthing locks, offered next to the doorbell | one button per entrance; the blueprint offers the entrance that rang |
-| Live video | yes (experimental) | snapshots now; go2rtc live video planned |
+| Live video | yes (experimental) | yes, through go2rtc (experimental) |
 | Two-way audio | yes (experimental) | planned |
 
 Steps in short:
@@ -414,7 +414,7 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
 - Validate the continuous latest-snapshot fallback across additional HomeKit clients
 - Add receive-only audio, followed by carefully tested two-way audio
 - Associate the correct opening control with each entrance where HomeKit allows
-- Home Assistant live video and two-way audio through go2rtc
+- Home Assistant two-way audio through the go2rtc backchannel
 
 ## Disclaimer
 

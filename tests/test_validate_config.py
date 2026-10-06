@@ -81,6 +81,9 @@ class ValidateConfigTests(unittest.TestCase):
                 ({"api": {"enabled": True, "token_file": str(open_token)}}, "permessi 600"),
                 ({"api": {"enabled": True, "token_file": str(token), "port": 0}}, "api.port"),
                 ({"api": {"enabled": True, "token_file": str(token), "allowed_clients": "x"}}, "allowed_clients"),
+                ({"api": {"enabled": True, "token_file": str(token),
+                          "live_rtsp_url": "rtsp://u:p@198.51.100.2:8554/videocitofono"}}, None),
+                ({"api": {"enabled": True, "token_file": str(token), "live_rtsp_url": "http://x"}}, "live_rtsp_url"),
             ]
             with patch("scripts.validate_config.shutil.which", return_value="/usr/bin/tool"):
                 for extra, error in cases:

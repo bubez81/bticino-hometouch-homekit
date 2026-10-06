@@ -1,8 +1,8 @@
-"""Camera entity: still images from the listener (live video in a later phase)."""
+"""Camera entity: snapshots from the listener and, when configured, live RTSP video."""
 
 from __future__ import annotations
 
-from homeassistant.components.camera import Camera
+from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -22,6 +22,13 @@ class HometouchCamera(HometouchEntity, Camera):
     def __init__(self, hub) -> None:
         HometouchEntity.__init__(self, hub, "camera")
         Camera.__init__(self)
+        self._live_url = hub.info.get("live_rtsp_url")
+        if self._live_url:
+            # Home Assistant's built-in go2rtc turns this RTSP source into WebRTC.
+            self._attr_supported_features = CameraEntityFeature.STREAM
+
+    async def stream_source(self) -> str | None:
+        return self._live_url
 
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
         try:

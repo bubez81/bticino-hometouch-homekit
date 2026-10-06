@@ -68,7 +68,29 @@ devices and a button that opens **only the entrance that rang**. If the entrance
 is not recognised in time, every entrance is offered (up to four). The button in
 the notification stays valid for a configurable time (default two minutes).
 
-## 5. MQTT locks and HomeKit
+## 5. Live video (go2rtc)
+
+The camera streams live when the listener advertises an RTSP source:
+
+1. On the listener host install [go2rtc](https://github.com/AlexxIT/go2rtc)
+   (official release binary; verify its SHA-256) and run it as an unprivileged
+   service with [`packaging/go2rtc.example.yaml`](../packaging/go2rtc.example.yaml):
+   API on localhost only, RTSP on the LAN with a password, one `videocitofono`
+   stream that runs `src/bticino_live_source.py`.
+2. Add to the listener `api` section
+   `"live_rtsp_url": "rtsp://bticino:<password>@<listener IP>:8554/videocitofono"`
+   and restart the listener. Only authenticated API clients receive this URL.
+3. Reload the integration: the camera gains streaming, and Home Assistant's
+   built-in go2rtc plays it with WebRTC.
+
+The source starts only while someone watches. During a ring it relays the
+call's video; otherwise it places an on-demand camera call and closes it when
+the last viewer leaves. If no video arrives within 12 seconds it retries once,
+because a call started while the previous one is still closing may carry no
+media. If the camera is busy (for example Apple Home is viewing) it shows the
+latest snapshot instead. Expect the first image after about 5 seconds.
+
+## 6. MQTT locks and HomeKit
 
 Existing MQTT locks fed by `bticino_mqtt_bridge.py` keep working; the buttons
 above are an alternative that does not need MQTT.
@@ -79,7 +101,7 @@ for accessories advertised with the *Video Doorbell* category, which bridged
 accessories do not carry. The same limitation led the Homebridge plugin to its
 `standalone` option.
 
-## 6. Tests
+## 7. Tests
 
 ```sh
 pip install pytest-homeassistant-custom-component PyTurboJPEG
