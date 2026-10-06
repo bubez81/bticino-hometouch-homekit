@@ -471,10 +471,16 @@ def last_ring_from_snapshots():
 
 
 def api_info():
-    return {"entrances": sorted(ENTRANCE_OPENER.entrances) if ENTRANCE_OPENER.enabled else [],
+    live_url = (CONFIG.get("api") or {}).get("live_rtsp_url")
+    info = {"entrances": sorted(ENTRANCE_OPENER.entrances) if ENTRANCE_OPENER.enabled else [],
             "opening_enabled": ENTRANCE_OPENER.enabled,
             "entrance_classification": ENTRANCE_CLASSIFICATION_ENABLED,
-            "capabilities": ["events", "snapshot"] + (["open"] if ENTRANCE_OPENER.enabled else [])}
+            "capabilities": ["events", "snapshot"] + (["open"] if ENTRANCE_OPENER.enabled else [])
+                            + (["live"] if live_url else [])}
+    if live_url:
+        # Served only to authenticated API clients; it may embed RTSP credentials.
+        info["live_rtsp_url"] = live_url
+    return info
 
 
 def api_command(request):

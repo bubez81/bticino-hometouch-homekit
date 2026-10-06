@@ -1,0 +1,14 @@
+# go2rtc for live video in Home Assistant (see docs/home-assistant.md).
+# Keep this file private (mode 600): it holds the RTSP password.
+api:
+  listen: "127.0.0.1:1984"     # web UI/API only on the listener host
+rtsp:
+  listen: ":8554"              # LAN; Home Assistant pulls the stream from here
+  username: "bticino"
+  password: "<random password>"
+webrtc:
+  listen: ""                   # Home Assistant's own go2rtc provides WebRTC
+log:
+  level: info
+streams:
+  videocitofono: "exec:/usr/bin/python3 /opt/bticino-go2rtc/bticino_live_source.py --ffmpeg /opt/homebrew/bin/ffmpeg --output {output}"

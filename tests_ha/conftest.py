@@ -28,7 +28,8 @@ class FakeListener:
         self.server = bticino_api.ApiServer(
             ("127.0.0.1", 0), TOKEN, self.bus,
             lambda: {"entrances": ["esterno", "scala"], "opening_enabled": True,
-                     "entrance_classification": True, "capabilities": ["events", "snapshot", "open"]},
+                     "entrance_classification": True, "capabilities": ["events", "snapshot", "open", "live"],
+                     "live_rtsp_url": "rtsp://user:pw@198.51.100.2:8554/videocitofono"},
             self.command, self.snapshot)
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()

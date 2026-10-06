@@ -121,6 +121,9 @@ def validate(path):
                 raise ValueError("api.token_file deve avere permessi 600")
             if len(token_path.read_text(encoding="utf-8").strip()) < 24:
                 raise ValueError("il token API deve avere almeno 24 caratteri")
+            live_url = api.get("live_rtsp_url")
+            if live_url is not None and (not isinstance(live_url, str) or not live_url.startswith(("rtsp://", "rtsps://"))):
+                raise ValueError("api.live_rtsp_url deve essere un indirizzo rtsp://")
     return data
 
 

@@ -70,7 +70,11 @@ async def test_entities_events_and_opening(hass, listener):
     await hass.services.async_call("button", "press", {"entity_id": "button.videocitofono_apri_scala"}, blocking=True)
     assert listener.commands == [{"command": "open_entrance", "entrance": "scala"}]
 
-    from homeassistant.components.camera import async_get_image
+    from homeassistant.components.camera import CameraEntityFeature, async_get_image, async_get_stream_source
+    camera_state = hass.states.get("camera.videocitofono_telecamera")
+    assert camera_state.attributes["supported_features"] & CameraEntityFeature.STREAM
+    assert await async_get_stream_source(hass, "camera.videocitofono_telecamera") == \
+        "rtsp://user:pw@198.51.100.2:8554/videocitofono"
     image = await async_get_image(hass, "camera.videocitofono_telecamera", width=640, height=360)
     assert image.content == b"\xff\xd8640x360"
 
