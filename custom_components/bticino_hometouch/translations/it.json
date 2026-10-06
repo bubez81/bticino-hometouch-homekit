@@ -64,7 +64,7 @@
       "last_entrance": {
         "name": "Ingresso ultima suonata",
         "state": {
-          "unknown": "Non riconosciuto"
+          "not_recognized": "Non riconosciuto"
         }
       }
     }

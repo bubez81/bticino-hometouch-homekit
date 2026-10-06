@@ -14,6 +14,13 @@ release or npm publication is implied.
   (the entrance of that ring is not stored and stays unknown). The Home
   Assistant image entity also picks up that time when the listener restarts
   while Home Assistant is running.
+- The last-entrance sensor used `unknown` for an unrecognised entrance, which
+  Home Assistant treats as its reserved *unknown* state; the option is now
+  `not_recognized` (shown as *Non riconosciuto*). Automations comparing the
+  sensor with `unknown` must use `not_recognized`.
+- Ring blueprint: the wait for the entrance no longer ends immediately when
+  the sensor resets at the start of a ring; it waits for a recognised entrance.
+  Re-import the blueprint to update it.
 
 ## 2026-10-05
 

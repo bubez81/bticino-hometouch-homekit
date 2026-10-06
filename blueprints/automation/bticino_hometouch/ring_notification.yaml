@@ -99,6 +99,10 @@ actions:
     wait_for_trigger:
       - trigger: state
         entity_id: !input entrance_sensor
+        not_to:
+          - not_recognized
+          - unknown
+          - unavailable
     timeout:
       seconds: !input entrance_wait
     continue_on_timeout: true

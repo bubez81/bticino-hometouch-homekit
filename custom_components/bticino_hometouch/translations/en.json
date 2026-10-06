@@ -64,7 +64,7 @@
       "last_entrance": {
         "name": "Last ring entrance",
         "state": {
-          "unknown": "Not recognized"
+          "not_recognized": "Not recognized"
         }
       }
     }
