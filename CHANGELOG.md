@@ -15,8 +15,11 @@ release or npm publication is implied.
   (`src/bticino_incoming_audio.py`). The panel's sound is decoded to PCM for
   the plugin, which reuses the live-view audio path (jitter buffer, HomeKit
   Opus, microphone to the talk port). Before, the call carried no client
-  audio, so the panel sent none and talking never reached the door. Not yet
-  verified with a real ring.
+  audio, so the panel sent none and talking never reached the door. Verified
+  with a real ring: notification, live video, panel sound and speech at the
+  door. An answered call is no longer cut 35 seconds after the ring (a limit
+  meant for unanswered rings); it lasts until the panel ends it, at most
+  three minutes.
 - While a ring's snapshot is being taken, the snapshot endpoint serves the
   latest real image instead of a flat placeholder. Test rings with a real image
   produced an Apple Home notification while real rings, served the

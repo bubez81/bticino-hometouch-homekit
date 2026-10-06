@@ -98,6 +98,8 @@ RECONNECT_STABLE_AFTER = float(CONFIG.get("reconnect_stable_after", 30.0))
 
 USER_AGENT = "HOMETOUCH-Diagnostic-Listener/1.0"
 MEDIA_TIMEOUT = 30
+# An answered call lasts until the panel ends it; this is only a safety limit.
+ANSWERED_MEDIA_TIMEOUT = 180
 MEDIA_PORT_START = 2202
 MEDIA_PORT_END = 2213
 INTERNAL_MEDIA_PORT_START = 22202
@@ -1753,7 +1755,7 @@ class HomtouchListener:
             if capture.poll():
                 self.media.pop(call_id, None)
                 api_publish("call_ended", call_id=call_id, reason="media_ended")
-            elif time.time() - capture.started > MEDIA_TIMEOUT + 5:
+            elif time.time() - capture.started > self.media_limit(call_id):
                 capture.stop("timeout")
                 self.media.pop(call_id, None)
                 api_publish("call_ended", call_id=call_id, reason="timeout")
@@ -1763,6 +1765,14 @@ class HomtouchListener:
                 self.dialog_tags.pop(call_id, None)
         self.publish_incoming_state()
 
+
+    def media_limit(self, call_id):
+        # Unanswered rings only feed snapshots and notifications; once answered
+        # from Home, the conversation must not be cut after 35 seconds.
+        dialog = self.incoming_dialogs.get(call_id)
+        if dialog is not None and dialog.state in ('answered', 'established'):
+            return ANSWERED_MEDIA_TIMEOUT
+        return MEDIA_TIMEOUT + 5
 
     def publish_incoming_state(self):
         if IPC_MODULE is not None:
