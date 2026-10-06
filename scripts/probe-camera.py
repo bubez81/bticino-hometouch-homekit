@@ -160,7 +160,7 @@ class AudioSender:
     port; the probe relays those packets from its own audio sockets, so the
     gateway sees one symmetric RTP/RTCP flow.
     """
-    def __init__(self, ffmpeg, local_material):
+    def __init__(self, ffmpeg, local_material, seconds):
         self.rtp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtcp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtp.bind(('127.0.0.1', 0))
@@ -168,8 +168,9 @@ class AudioSender:
         self.rtp.setblocking(False)
         self.rtcp.setblocking(False)
         port = self.rtp.getsockname()[1]
+        # The time limit ends the encoder even if the probe is killed.
         self.process = subprocess.Popen([ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-re',
-            '-f', 'lavfi', '-i', 'anullsrc=r=8000:cl=mono', '-c:a', 'libspeex', '-ar', '8000', '-ac', '1',
+            '-f', 'lavfi', '-t', str(seconds), '-i', 'anullsrc=r=8000:cl=mono', '-c:a', 'libspeex', '-ar', '8000', '-ac', '1',
             '-frames_per_packet', '1', '-vad', '0', '-dtx', '0', '-payload_type', str(SPEEX_PAYLOAD),
             '-f', 'rtp', '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
             '-srtp_out_params', base64.b64encode(local_material).decode(),
@@ -261,18 +262,21 @@ def main():
     args = p.parse_args()
     if not 1 <= args.duration <= 300:
         p.error('duration must be between 1 and 300 seconds')
-    stopping = False
-    def stop_requested(signum, frame):
-        nonlocal stopping
-        stopping = True
-    signal.signal(signal.SIGTERM, stop_requested)
-    signal.signal(signal.SIGINT, stop_requested)
     rows = json.loads(Path(args.candidates).read_text())['candidates']
     if not 1 <= args.candidate <= len(rows):
         raise ValueError('Invalid candidate index')
     spec = importlib.util.spec_from_file_location('listener', args.listener)
     lib = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(lib)
+    # Install handlers after loading the listener module, which installs its own
+    # at import time. Otherwise SIGTERM is swallowed, the call is killed without
+    # BYE and its FFmpeg children are orphaned.
+    stopping = False
+    def stop_requested(signum, frame):
+        nonlocal stopping
+        stopping = True
+    signal.signal(signal.SIGTERM, stop_requested)
+    signal.signal(signal.SIGINT, stop_requested)
     # Suppress library messages that could include account/network identifiers.
     lib.log = lambda *a, **k: None
     client = lib.HomtouchListener()
@@ -392,7 +396,7 @@ def main():
                 if remote_audio:
                     try:
                         audio_destinations = media_destinations(raw, 'audio')
-                        sender = AudioSender(audio_ffmpeg, local_material)
+                        sender = AudioSender(audio_ffmpeg, local_material, args.duration + 15)
                     except (ValueError, OSError) as exc:
                         print(f'AUDIO_START_FAILED={type(exc).__name__}', flush=True)
                         remote_audio = None

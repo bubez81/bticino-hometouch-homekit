@@ -50,6 +50,14 @@ release or npm publication is implied.
 
 ### Fixed
 
+- Closing a camera call (`stop_call`, end of a live view) did not work: the
+  probe imported the listener module, whose import-time SIGTERM handler replaced
+  the probe's own. The probe ignored the stop request, was killed after 8 s
+  without sending BYE to the gateway, and left its FFmpeg processes running.
+  It now installs its handlers after loading the listener and ends the call
+  with BYE within a few seconds; the Speex sender also has a time limit as a
+  safety net. Calls left open by the gateway probably explain why frequent
+  on-demand calls stopped delivering video for minutes.
 - After a listener restart the API reported no last ring until the next call,
   so Home Assistant showed *unknown* for the last ring and visitor. The
   listener now restores the last ring time from the newest snapshot file name

@@ -99,10 +99,11 @@ class ProbeTests(unittest.TestCase):
         import socket
         from unittest.mock import Mock
         with patch.object(probe.subprocess, 'Popen', return_value=Mock(poll=Mock(return_value=0))) as launch:
-            sender = probe.AudioSender('ffmpeg-speex', b'\x01' * 30)
+            sender = probe.AudioSender('ffmpeg-speex', b'\x01' * 30, 35)
         command = launch.call_args.args[0]
         self.assertIn('libspeex', command)
         self.assertEqual(command[command.index('-payload_type') + 1], '97')
+        self.assertEqual(command[command.index('-t') + 1], '35')
         self.assertNotIn('\x01', ' '.join(command))
         encoder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         encoder.sendto(b'srtp', sender.rtp.getsockname())
@@ -147,11 +148,14 @@ class ProbeTests(unittest.TestCase):
                               sip_headers=headers, status_code=lambda raw: 200,
                               sip_first_line=lambda raw: raw.decode().splitlines()[0])
         ticks = iter(i * 0.25 for i in range(1000))
+        installed = []
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'candidates.json'
             path.write_text(json.dumps({'candidates': [{'cid': '10050', 'devaddr': '200'}]}))
-            with patch.object(probe.importlib.util, 'module_from_spec', return_value=lib), patch.object(probe.importlib.util, 'spec_from_file_location', return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda m: None))), patch.object(probe.socket, 'socket', return_value=Sock()), patch.object(probe.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(probe.time, 'sleep'), patch('sys.argv', ['probe', '--candidates', str(path), '--candidate', '1']), redirect_stdout(io.StringIO()) as out:
+            with patch.object(probe.importlib.util, 'module_from_spec', return_value=lib), patch.object(probe.importlib.util, 'spec_from_file_location', return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda m: probe.signal.signal(probe.signal.SIGTERM, 'listener')))), patch.object(probe.signal, 'signal', side_effect=lambda sig, handler: installed.append((sig, handler))), patch.object(probe.socket, 'socket', return_value=Sock()), patch.object(probe.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(probe.time, 'sleep'), patch('sys.argv', ['probe', '--candidates', str(path), '--candidate', '1']), redirect_stdout(io.StringIO()) as out:
                 probe.main()
         self.assertEqual([m.split()[0] for m in sent], ['INVITE', 'ACK', 'BYE'])
         self.assertIn('termination_confirmed=True', out.getvalue())
         self.assertNotIn('REGISTER', ''.join(sent))
+        # The probe's own SIGTERM handler must win over the one the listener module installs.
+        self.assertTrue(callable([h for sig, h in installed if sig == probe.signal.SIGTERM][-1]))
