@@ -15,8 +15,12 @@ release or npm publication is implied.
   an audio call (`start_call` with `audio` and `audio_port`), re-encodes the
   entrance panel's sound for HomeKit, and, while Home unmutes the microphone,
   sends the iPhone's voice to the call's talk port. `test-live-audio.js`
-  checks both directions with real encoders. Not yet verified on the physical
-  doorbell.
+  checks both directions with real encoders. A 200-ms jitter buffer feeds the
+  HomeKit encoder at a steady rate: on the test installation the panel's audio
+  arrived in bursts (gaps of 80–180 ms, once 742 ms, then catch-up), which made
+  it come and go in Apple Home. Panel sound was heard in Apple Home; speaking
+  from Home to the door is not yet verified. The entrance panel ends a call with
+  audio after about 60 seconds; the plugin then opens a new one.
 - Speaking from Home Assistant: a go2rtc backchannel source
   (`src/bticino_talk_relay.py`) forwards the viewer's microphone to the camera
   call, which sends it to the door instead of silence. On the test
