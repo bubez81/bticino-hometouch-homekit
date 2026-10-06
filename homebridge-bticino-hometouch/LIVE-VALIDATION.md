@@ -33,7 +33,7 @@ The following entries preserve intermediate observations. Statements about
 foreground execution, missing integration and outstanding fixture failures
 describe that date, not the current implementation above.
 
-Only the isolated Cubetto test bridge was changed (`/private/tmp/bticino-child`, port 51991).
+Only the isolated test bridge was changed (`/private/tmp/bticino-child`, port 51991).
 The main Homebridge was not changed. No HomeKit identity reset is necessary.
 
 ## Observations
@@ -78,7 +78,7 @@ These modules are intentionally NOT imported by the deployed listener/plugin yet
 `rtcp-diagnostic.js` authenticates SRTCP before parsing and logs only reception statistics, never keys or media payloads.
 ### Historical stage: incoming-call audio integration — 2026-09-16 19:39
 
-Installed on Cubetto's **test bridge only** (port 51991) and its SIP listener.
+Installed on the test host's **test bridge only** (port 51991) and its SIP listener.
 Backup: `/opt/bticino-sniffer/backups/incoming-audio-ltrgagu6` (numbered files with manifest).
 Bridge execution session: 66723. SIP re-registration returned 200; IPC ping and
 incoming_status succeeded after restart. Homebridge loaded without errors.

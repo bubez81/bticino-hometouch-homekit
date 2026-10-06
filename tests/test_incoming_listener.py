@@ -9,7 +9,7 @@ from bticino_incoming_dialog import IncomingDialog
 
 INVITE = (b'INVITE sip:local SIP/2.0\r\nVia: SIP/2.0/TLS gateway;branch=z9hG4bKtest\r\n'
           b'From: <sip:door>;tag=remote\r\nTo: <sip:local>\r\nCall-ID: test\r\n'
-          b'CSeq: 1 INVITE\r\nContact: <sip:door@192.168.1.10>\r\nContent-Length: 0\r\n\r\n')
+          b'CSeq: 1 INVITE\r\nContact: <sip:door@192.0.2.10>\r\nContent-Length: 0\r\n\r\n')
 
 
 class ListenerTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class ListenerTests(unittest.TestCase):
         self.capture = Mock(answer_sdp='test-sdp')
         self.client.media = {'test': self.capture}
         self.client.dialog_tags = {'test': 'local'}
-        self.dialog = IncomingDialog(INVITE, '<sip:local@192.168.1.2>', self.client.send, 'local')
+        self.dialog = IncomingDialog(INVITE, '<sip:local@192.0.2.2>', self.client.send, 'local')
         self.client.incoming_dialogs = {'test': self.dialog}
 
     def test_retransmission_reuses_receiver(self):

@@ -43,7 +43,7 @@ Lock, 7 listener, 8 dialog, 5 opening guard tests and loopback adapter tests pas
 Real Home UI placement, sustained call audio and physical opening are not yet
 validated. No real unlock or synthetic ring was sent during deployment.
 
-## Cubetto deployment — 2026-09-19 21:07 CEST
+## Test installation deployment — 2026-09-19 21:07 CEST
 
 Installed and enabled in the dedicated /opt/bticino-homebridge instance and
 /opt/bticino-sniffer listener. Backup: /opt/bticino-sniffer/backups/call-unlock-y8gbvfe4.

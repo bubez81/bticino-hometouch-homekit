@@ -1,4 +1,4 @@
-"""Scoped deployment on Cubetto. Never issues an opening command."""
+"""Scoped deployment on the test host. Never issues an opening command."""
 import hashlib
 import json
 import os

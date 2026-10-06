@@ -1,4 +1,4 @@
-"""Scoped Cubetto diagnostic update; no credentials or media keys printed."""
+"""Scoped test-host diagnostic update; no credentials or media keys printed."""
 import collections
 import json
 import os

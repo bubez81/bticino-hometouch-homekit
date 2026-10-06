@@ -93,7 +93,7 @@ if (process.argv.includes('--self-test')) {
     process.once('SIGTERM',()=>api.emit('shutdown'));
   } else camera.configureController(new hap.CameraController({cameraStreamCount:2,delegate,streamingOptions:{supportedCryptoSuites:[0],video:{codec:{profiles:[0,1,2],levels:[0,1,2]},resolutions:[[1280,720,30],[640,480,30],[640,360,30],[320,240,30],[320,240,15],[320,180,30]]}}}));
   bridge.addBridgedAccessory(camera);
-  bridge.publish({username:'0E:29:63:85:AF:12',pincode:'031-45-154',port:51990,category:hap.Categories.BRIDGE}).catch(err => {console.error(err.message);process.exitCode=1;});
+  bridge.publish({username:'0E:12:34:56:78:9B',pincode:'031-45-154',port:51990,category:hap.Categories.BRIDGE}).catch(err => {console.error(err.message);process.exitCode=1;});
   bridge.on('listening', () => console.log('SYNTHETIC_READY port=51990 code=031-45-154'));
   for (const signal of ['SIGINT','SIGTERM']) process.once(signal, async () => {for(const id of [...sessions.keys()])stop(id);await bridge.unpublish();process.exit(0);});
 }

@@ -6,7 +6,7 @@ sys.path.insert(0,str(Path(__file__).parents[1]/'src'))
 from bticino_audio_offer import parse_audio_offer
 
 KEY=base64.b64encode(bytes(range(30))).decode()
-SDP=f'v=0\r\nc=IN IP4 192.168.100.164\r\nm=audio 24000 RTP/SAVP 18 0 8\r\na=rtpmap:18 G729/8000\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:{KEY}\r\na=sendrecv\r\nm=video 25000 RTP/SAVP 96\r\na=recvonly\r\n'
+SDP=f'v=0\r\nc=IN IP4 192.0.2.164\r\nm=audio 24000 RTP/SAVP 18 0 8\r\na=rtpmap:18 G729/8000\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:{KEY}\r\na=sendrecv\r\nm=video 25000 RTP/SAVP 96\r\na=recvonly\r\n'
 
 class AudioOfferTests(unittest.TestCase):
     def test_real_gateway_speex_offer(self):
@@ -33,7 +33,7 @@ class AudioOfferTests(unittest.TestCase):
     def test_reject_invalid_key(self):
         with self.assertRaises(ValueError):parse_audio_offer(SDP.replace(KEY,'AAAA'))
     def test_reject_loopback_destination(self):
-        with self.assertRaises(ValueError):parse_audio_offer(SDP.replace('192.168.100.164','127.0.0.1'))
+        with self.assertRaises(ValueError):parse_audio_offer(SDP.replace('192.0.2.164','127.0.0.1'))
     def test_reject_plaintext(self):
         with self.assertRaises(ValueError):parse_audio_offer(SDP.replace('RTP/SAVP','RTP/AVP'))
 

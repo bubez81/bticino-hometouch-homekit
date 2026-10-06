@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the tested incoming-call audio path on Cubetto's test bridge only."""
+"""Install the tested incoming-call audio path on the test host's test bridge only."""
 import hashlib
 import json
 import os

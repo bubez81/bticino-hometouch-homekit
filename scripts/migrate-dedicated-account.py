@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install pre-provisioned credentials on Cubetto, preserving rollback files."""
+"""Install pre-provisioned credentials on the test host, preserving rollback files."""
 import json
 import os
 from pathlib import Path

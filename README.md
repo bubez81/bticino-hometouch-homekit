@@ -375,11 +375,12 @@ helper stops the legacy service, invokes the verified installer and archives
 the old plist only after the new service has registered successfully:
 
 ```sh
-sudo ./scripts/migrate_macos_service.sh
+sudo BTICINO_LEGACY_LABEL=<your.old.label> ./scripts/migrate_macos_service.sh
 ```
 
-The known early label is detected by default. For another explicitly verified
-label, set `BTICINO_LEGACY_LABEL`. On failure the helper removes the incomplete
+Set `BTICINO_LEGACY_LABEL` to the exact label of the old service
+(`sudo launchctl list | grep -i bticino` shows it); the helper refuses to run
+without it. On failure the helper removes the incomplete
 new service and reactivates the legacy one. The old plist is retained inside
 the private `/opt/bticino-sniffer/backups/` directory rather than deleted.
 
