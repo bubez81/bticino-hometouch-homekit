@@ -67,10 +67,14 @@ def handle_request(request: dict) -> dict:
             if not isinstance(owner, str) or not owner or not isinstance(port, int) or not 1024 <= port <= 65535:
                 return {"ok": False, "error": "invalid_stream_session"}
             environment = dict(os.environ, BTICINO_LIVE_VIDEO_PORT=str(port))
-            _call_process = subprocess.Popen([
+            command = [
                 sys.executable, CAMERA_PROBE, "--candidates", CAMERA_CANDIDATES,
                 "--candidate", candidate, "--prime-udp", "--stream", "--duration", "300",
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environment)
+            ]
+            if request.get('audio') is True:
+                command.append("--audio")
+            _call_process = subprocess.Popen(command, stdout=subprocess.DEVNULL,
+                                             stderr=subprocess.DEVNULL, env=environment)
             _call_owner = owner
         return {"ok": True, "command": command, "state": "calling"}
     if command == "stop_call":

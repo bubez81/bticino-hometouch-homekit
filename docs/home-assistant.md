@@ -92,6 +92,17 @@ less than 20 seconds ago, or when no video arrives within 12 seconds, it shows
 the latest snapshot instead. Expect the first image after about 5 seconds. Add
 `--log <file>` to the stream command to see what the source did.
 
+**Audio.** The on-demand call also carries the entrance panel's audio, as in the
+official app. The gateway accepts audio only as Speex (8 kHz) in both directions
+and sends the panel's sound only while it receives audio from the client, so
+the camera call transmits silence and transcodes what it receives to Opus for
+WebRTC. Sending Speex needs an FFmpeg built with `libspeex`; Homebrew's FFmpeg
+lacks it, while the one bundled with `ffmpeg-for-homebridge` has it. Set its
+path as `audio_ffmpeg` in the listener `config.json` (or `BTICINO_AUDIO_FFMPEG`);
+the listener does not need a restart. Without such an FFmpeg the stream keeps
+working with video only. Add `--no-audio` to the stream command to never ask for
+audio. During a ring the stream remains video only.
+
 ## 6. MQTT locks and HomeKit
 
 Existing MQTT locks fed by `bticino_mqtt_bridge.py` keep working; the buttons

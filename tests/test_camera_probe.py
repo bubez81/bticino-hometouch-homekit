@@ -57,6 +57,65 @@ class ProbeTests(unittest.TestCase):
         sdp = probe.offer('127.0.0.1', 24000, {'cid': '10061', 'devaddr': '6001'}, 'test')
         self.assertIn('a=DEVADDR:6001\r\na=TVCC:1', sdp)
 
+    AUDIO_ANSWER = (b'SIP/2.0 200 OK\r\n\r\nv=0\r\nc=IN IP4 192.0.2.1\r\n'
+                    b'm=audio 30002 RTP/SAVP 97 101\r\na=rtpmap:97 speex/8000\r\na=rtpmap:101 telephone-event/8000\r\n'
+                    b'a=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:' + b'A' * 38 + b'==\r\na=sendrecv\r\n'
+                    b'm=video 30000 RTP/SAVP 96\r\na=rtpmap:96 H264/90000\r\n')
+
+    def test_audio_answer_accepts_only_enabled_speex_with_key(self):
+        self.assertEqual(probe.audio_answer(self.AUDIO_ANSWER), ('97', '1', 'A' * 38 + '=='))
+        self.assertEqual(probe.media_destinations(self.AUDIO_ANSWER, 'audio'),
+                         (('192.0.2.1', 30002), ('192.0.2.1', 30003)))
+        self.assertIsNone(probe.audio_answer(self.AUDIO_ANSWER.replace(b'm=audio 30002', b'm=audio 0')))
+        self.assertIsNone(probe.audio_answer(self.AUDIO_ANSWER.replace(b'speex/8000', b'PCMU/8000')))
+        self.assertIsNone(probe.audio_answer(self.AUDIO_ANSWER.replace(b'a=crypto', b'a=nocrypto')))
+        self.assertIsNone(probe.audio_answer(b'SIP/2.0 200 OK\r\n\r\nv=0\r\nm=video 30000 RTP/SAVP 96\r\n'))
+
+    def test_offer_audio_is_speex_sendrecv_on_next_ports(self):
+        row = {'cid': '10050', 'devaddr': '200'}
+        self.assertIn('m=audio 0 RTP/SAVP 0\r\na=inactive', probe.offer('127.0.0.1', 24000, row, 'k'))
+        sdp = probe.offer('127.0.0.1', 24000, row, 'k', audio=True)
+        self.assertIn('m=audio 24002 RTP/SAVP 97 101\r\na=rtcp:24003', sdp)
+        self.assertIn('a=rtpmap:97 speex/8000', sdp)
+        self.assertIn('a=sendrecv', sdp)
+        self.assertIn('m=video 24000 RTP/SAVP 96', sdp)
+
+    def test_decoder_with_audio_streams_opus(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.parse_video_offer.return_value = ('96', '', '1', 'VIDEO_KEY')
+        with tempfile.TemporaryDirectory() as tmp, patch.object(probe.socket, 'socket', return_value=Mock()), patch.object(probe.tempfile, 'mkdtemp', return_value=tmp), patch.object(probe.subprocess, 'Popen') as launch:
+            decoder = probe.FrameDecoder(SimpleNamespace(FFMPEG='ffmpeg'), client, b'', stream=True,
+                                         audio=('97', '1', 'AUDIO_KEY'))
+            sdp = decoder.sdp.read_text()
+            self.assertIn(f'm=audio {decoder.port+2} RTP/SAVP 97', sdp)
+            self.assertIn('AUDIO_KEY', sdp)
+            command = launch.call_args.args[0]
+            self.assertIn('libopus', command)
+            self.assertEqual(command[command.index('libopus') - 2:command.index('libopus')], ['0:a:0', '-c:a'])
+            decoder.close()
+
+    def test_audio_sender_relays_encoder_packets_from_probe_sockets(self):
+        import socket
+        from unittest.mock import Mock
+        with patch.object(probe.subprocess, 'Popen', return_value=Mock(poll=Mock(return_value=0))) as launch:
+            sender = probe.AudioSender('ffmpeg-speex', b'\x01' * 30)
+        command = launch.call_args.args[0]
+        self.assertIn('libspeex', command)
+        self.assertEqual(command[command.index('-payload_type') + 1], '97')
+        self.assertNotIn('\x01', ' '.join(command))
+        encoder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        encoder.sendto(b'srtp', sender.rtp.getsockname())
+        encoder.sendto(b'srtcp', sender.rtcp.getsockname())
+        rtp_out, rtcp_out = Mock(), Mock()
+        import time
+        time.sleep(0.05)
+        self.assertEqual(sender.relay(rtp_out, rtcp_out, (('192.0.2.1', 30002), ('192.0.2.1', 30003))), 2)
+        rtp_out.sendto.assert_called_once_with(b'srtp', ('192.0.2.1', 30002))
+        rtcp_out.sendto.assert_called_once_with(b'srtcp', ('192.0.2.1', 30003))
+        encoder.close()
+        sender.close()
+
     def test_accepted_session_ack_and_bye(self):
         sent = []
         class Sock:

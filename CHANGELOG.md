@@ -8,6 +8,20 @@ release or npm publication is implied.
 
 ### Added
 
+- Entrance-panel audio in the Home Assistant live stream. With the new
+  `--audio` option the camera probe offers Speex 8 kHz send/receive, as the
+  official app does, sends encrypted Speex silence (the gateway transmits the
+  panel's sound only while it receives client audio), and adds the received
+  audio to the MPEG-TS stream as Opus. IPC `start_call` accepts `"audio": true`;
+  the go2rtc source requests it by default (`--no-audio` turns it off) and
+  forwards any audio track. Sending needs an FFmpeg with `libspeex`, configured
+  as `audio_ffmpeg` in the listener config or `BTICINO_AUDIO_FFMPEG`. Without
+  `--audio` the offer is unchanged, so Apple Home live view is not affected.
+- Validation: on the test installation the gateway accepted the Speex offer and
+  sent about 47 audio packets per second; a 20-second call produced H.264
+  400×288 with Opus 48 kHz. Audio with a G.711 offer, or without client audio,
+  was never received.
+
 - Live video for Home Assistant through go2rtc. `src/bticino_live_source.py` is
   a go2rtc `exec:` source: during a ring it relays the call's video, otherwise
   it places an on-demand camera call (`start_call`) and closes it when the last
