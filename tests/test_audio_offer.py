@@ -21,6 +21,9 @@ class AudioOfferTests(unittest.TestCase):
         self.assertTrue(result['can_talk'])
         self.assertTrue(result['can_listen'])
         self.assertEqual(result['rtcp_port'],24001)
+    def test_prefers_speex_over_earlier_g711(self):
+        offer=SDP.replace('18 0 8','0 97 8').replace('a=rtpmap:18 G729/8000','a=rtpmap:97 speex/8000')
+        self.assertEqual(parse_audio_offer(offer)['codec'],'SPEEX')
     def test_no_audio(self):
         self.assertIsNone(parse_audio_offer('v=0\nm=video 25000 RTP/SAVP 96\n'))
     def test_disabled(self):

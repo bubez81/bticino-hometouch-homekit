@@ -8,6 +8,20 @@ release or npm publication is implied.
 
 ### Added
 
+- Two-way audio during a ring (Apple Home). The listener now answers the
+  panel's call with Speex when offered and, as on camera calls, sends a
+  continuous encrypted stream from the start of the call: silence, or the
+  iPhone microphone while Home's talk button is on
+  (`src/bticino_incoming_audio.py`). The panel's sound is decoded to PCM for
+  the plugin, which reuses the live-view audio path (jitter buffer, HomeKit
+  Opus, microphone to the talk port). Before, the call carried no client
+  audio, so the panel sent none and talking never reached the door. Not yet
+  verified with a real ring.
+- While a ring's snapshot is being taken, the snapshot endpoint serves the
+  latest real image instead of a flat placeholder. Test rings with a real image
+  produced an Apple Home notification while real rings, served the
+  placeholder, did not; whether this was the cause is not yet confirmed.
+
 - Real audio in the Apple Home live view (Homebridge plugin, `liveAudio`,
   default on with `enableTwoWayAudio`). Until now the on-demand live view sent
   HomeKit synthetic silence (logged as `HomeKit diagnostic audio: silence

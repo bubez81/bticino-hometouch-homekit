@@ -33,14 +33,16 @@ def parse_audio_offer(sdp):
         if match:
             pt,codec,rate,channels=match.groups()
             maps[pt]=(codec.upper(),int(rate),int(channels or 1))
-    chosen=None
+    supported=[]
     for pt in fields[3:]:
         codec,rate,channels=maps.get(pt,('',0,0))
         if (codec in ('PCMU','PCMA','SPEEX') and rate==8000 and channels==1) or (codec=='OPUS' and rate==48000 and channels in (1,2)):
             if not 0<=int(pt)<=127:
                 raise ValueError('Invalid audio payload')
-            chosen=(int(pt),codec,rate,channels)
-            break
+            supported.append((int(pt),codec,rate,channels))
+    # The gateway exchanges audio only in Speex (it refused G.711 on camera
+    # calls), so prefer Speex when offered, otherwise the first supported codec.
+    chosen=next((item for item in supported if item[1]=='SPEEX'), supported[0] if supported else None)
     if chosen is None:
         raise ValueError('No supported two-way audio codec')
     material=tag=None
