@@ -24,7 +24,6 @@ release or npm publication is implied.
   latest real image instead of a flat placeholder. Test rings with a real image
   produced an Apple Home notification while real rings, served the
   placeholder, did not; whether this was the cause is not yet confirmed.
-
 - Real audio in the Apple Home live view (Homebridge plugin, `liveAudio`,
   default on with `enableTwoWayAudio`). Until now the on-demand live view sent
   HomeKit synthetic silence (logged as `HomeKit diagnostic audio: silence
@@ -38,13 +37,16 @@ release or npm publication is implied.
   it come and go in Apple Home. Panel sound was heard in Apple Home; speaking
   from Home to the door is not yet verified. The entrance panel ends a call with
   audio after about 60 seconds; the plugin then opens a new one.
+- Ring blueprint: the notification plays a sound (`sound`, default iOS
+  `default`) and tapping it opens a configurable Home Assistant page
+  (`tap_url`; the iOS app opens paths, not entity dialogs). Holding it shows
+  the camera live.
 - Speaking from Home Assistant: a go2rtc backchannel source
   (`src/bticino_talk_relay.py`) forwards the viewer's microphone to the camera
   call, which sends it to the door instead of silence. On the test
   installation the browser microphone reached the call; playback at the door
   is not yet verified. go2rtc's RTSP server does not relay the backchannel, so
   the browser must use the listener host's go2rtc (WebRTC Camera card).
-
 - Entrance-panel audio in the Home Assistant live stream. With the new
   `--audio` option the camera probe offers Speex 8 kHz send/receive, as the
   official app does, sends encrypted Speex silence (the gateway transmits the
@@ -63,7 +65,6 @@ release or npm publication is implied.
   sent about 47 audio packets per second; a 20-second call produced H.264
   400×288 with Opus 48 kHz. Audio with a G.711 offer, or without client audio,
   was never received. Panel sound was heard in the Home Assistant live view.
-
 - Live video for Home Assistant through go2rtc. `src/bticino_live_source.py` is
   a go2rtc `exec:` source: during a ring it relays the call's video, otherwise
   it places an on-demand camera call (`start_call`) and closes it when the last

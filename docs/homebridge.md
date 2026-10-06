@@ -5,8 +5,10 @@ instance running the plugin in `homebridge-bticino-hometouch/`. For Home
 Assistant see [home-assistant.md](home-assistant.md); both can run at the same
 time on the same listener.
 
-Status (2026-10): ring notifications with snapshot, live video (intermittent,
-see below) and entrance opening verified on one HOMETOUCH installation.
+Status (2026-10): ring notifications with snapshot, live video with the
+entrance panel's sound, answering a ring and talking to the door, and entrance
+opening verified on one HOMETOUCH installation (talking from the on-demand live
+view is implemented but not yet verified at the door).
 
 ## 1. Listener prerequisites
 
@@ -30,9 +32,17 @@ and choose your own bridge `username` and `pin`. The relevant accessory options:
   "enableHapLive": true,
   "enableTwoWayAudio": true,
   "ffmpegPath": "/opt/homebrew/opt/ffmpeg/bin/ffmpeg",
+  "audioFfmpegPath": "<FFmpeg with libspeex and libopus>",
   "standalone": true
 }
 ```
+
+Audio needs, in the listener `config.json`, `"incoming_audio": true` (talking
+during a ring) and `"audio_ffmpeg"`: an FFmpeg built with `libspeex`, because
+the gateway exchanges audio only in Speex. Homebrew's FFmpeg lacks it; the one
+bundled with `ffmpeg-for-homebridge` has it. The plugin option `liveAudio`
+(default on) adds the panel's sound to the on-demand live view; `false`
+restores the previous video-only behaviour.
 
 **`standalone: true` is required for ring notifications.** It publishes the
 doorbell as its own HomeKit accessory with the *Video Doorbell* category.
@@ -53,7 +63,26 @@ logged (`Snapshot inviato: richiesta=…`).
 The bridge itself only needs to be added if you use the experimental in-call
 `BTicinoCallLock` ("Apri ingresso").
 
-## 4. Opening the gates from Apple Home
+## 4. Audio and talking
+
+The gateway sends the panel's sound only while it receives audio from the
+client, so every call (on-demand live view and answered ring) sends silence to
+the door and switches to the iPhone microphone while the talk button in Home is
+on. In the live view:
+
+- the panel's sound plays as soon as the video starts (it is often near
+  silence: the panel is quiet when nobody is there);
+- the talk button sends your voice to the door speaker;
+- answering a ring from the notification opens the call's live video; the
+  call then lasts until the panel ends it (about a minute), an unanswered ring
+  is closed after 35 seconds;
+- the panel ends audio calls after about 60 seconds; during an on-demand view
+  the plugin opens a new call, with a short gap.
+
+Every 10 seconds the plugin logs `BTicino live audio: panel … B/s, level … dB,
+gaps filled …`, which tells whether sound arrives and how loud it is.
+
+## 5. Opening the gates from Apple Home
 
 Run the optional MQTT bridge (`src/bticino_mqtt_bridge.py`, README → *MQTT lock
 topics*) and add one Homebridge mqttthing lock per entrance:
@@ -82,7 +111,7 @@ If one device keeps showing stale lock states (for example *Unlocking…*) while
 others update, moving the locks to their own child bridge (new `_bridge`
 identity) and adding it again fixed it on the test installation.
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
@@ -90,6 +119,8 @@ identity) and adding it again fixed it on the test installation.
 | No preview, no live, no snapshot requests in the log | Home stored the camera as off: `"active": false` in `persist/ControllerStorage.*.json`. Choose *Stream* in Home; the hub rewrites the value on every reconnect, so editing the file does not help |
 | Accessory "Not responding" on one iPhone only | Rebuild the bridge with a new `username` and re-add it |
 | Live view shows no image | Wait about 6 seconds; repeated `source ended: reopening SIP` in the log points to the network path to the HOMETOUCH device |
+| Live view or ring call without sound | `audio_ffmpeg` must point to an FFmpeg with `libspeex`; check the `BTicino live audio` log lines |
+| After many live views in a row, no video or no audio for minutes | The gateway needs a pause after frequent calls; wait 10–20 minutes. Calls killed without `BYE` are closed at the next call (`STALE_BYE` in `camera-calls.log`) |
 | Test without anyone at the door | Send `{"command":"notify_ring"}` to the IPC socket; HomePods will chime |
 
 The HOMETOUCH gateway closes each SIP/TLS connection after about 1024 s; the

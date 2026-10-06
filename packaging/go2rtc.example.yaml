@@ -12,3 +12,19 @@ log:
   level: info
 streams:
   videocitofono: "exec:/usr/bin/python3 /opt/bticino-go2rtc/bticino_live_source.py --ffmpeg /opt/homebrew/bin/ffmpeg --output {output} --log /opt/bticino-go2rtc/live-source.log"
+
+# Optional, experimental: talking from the browser (WebRTC Camera card).
+# go2rtc's RTSP server does not relay the microphone, so the browser must use
+# this go2rtc directly: open the API to Home Assistant with a password and
+# enable WebRTC, then add a backchannel source to the stream.
+#
+# api:
+#   listen: ":1984"
+#   username: "homeassistant"
+#   password: "<random password>"
+# webrtc:
+#   listen: ":8555"
+# streams:
+#   videocitofono:
+#     - "exec:/usr/bin/python3 /opt/bticino-go2rtc/bticino_live_source.py --ffmpeg /opt/homebrew/bin/ffmpeg --output {output} --log /opt/bticino-go2rtc/live-source.log"
+#     - "exec:/usr/bin/python3 /opt/bticino-go2rtc/bticino_talk_relay.py#backchannel=1#audio=alaw/8000"
