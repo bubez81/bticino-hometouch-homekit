@@ -31,6 +31,8 @@ function jitterChecks() {
   assert.equal(jitter.written,Math.floor(Math.round(1000*32)/640)*640+640);
   jitter.push(Buffer.alloc(40000,2));                // burst: keep only the target
   assert.equal(jitter.pending.length,6400); assert(jitter.dropped>0);
+  const r=jitter.report(); assert(r.received>0&&r.underruns===1&&r.dropped>0&&r.level<0);
+  assert.deepEqual(jitter.report(),{received:0,underruns:0,dropped:0,level:null});
 }
 (async()=>{
   jitterChecks();

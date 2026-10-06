@@ -48,12 +48,20 @@ class JitterBuffer {
   }
   push(data) {
     this.received+=data.length;
+    for(let i=0;i+1<data.length;i+=2){const v=data.readInt16LE(i);this.energy=(this.energy||0)+v*v;this.samples=(this.samples||0)+1;}
     this.pending=Buffer.concat([this.pending,data]);
     if(this.pending.length>this.max){
       const excess=this.pending.length-this.target;
       this.dropped+=excess;this.pending=this.pending.subarray(excess);
     }
     if(!this.primed&&this.pending.length>=this.target)this.primed=true;
+  }
+  // Counters since the previous report, then reset.
+  report() {
+    const level=this.samples?Math.round(10*Math.log10(this.energy/this.samples/32768/32768||1e-12)):null;
+    const result={received:this.received,underruns:this.underruns,dropped:this.dropped,level};
+    this.received=this.underruns=this.dropped=this.energy=this.samples=0;
+    return result;
   }
   // Bytes due since the start, in whole frames: buffered audio, else silence.
   take() {
@@ -94,6 +102,10 @@ class LiveAudio {
       const stdin=this.listen?.stdin;
       if(chunk.length&&stdin&&stdin.writable)stdin.write(chunk);
     },20);
+    this.reporter=setInterval(()=>{
+      const r=this.jitter.report();
+      this.log?.info?.(`BTicino live audio: panel ${Math.round(r.received/10)} B/s (expected 32000), level ${r.level ?? '-'} dB, gaps filled ${r.underruns}, excess dropped ${r.dropped} B, mic packets ${this.talkPackets||0}`);
+    },10000);
     this.talkInput=await freePort(true);
     this.directory=fs.mkdtempSync(path.join(os.tmpdir(),'bticino-live-audio-'));
     fs.chmodSync(this.directory,0o700);
@@ -146,7 +158,7 @@ class LiveAudio {
     if(this.stopPromise)return this.stopPromise;
     this.stopping=true;
     clearTimeout(this.restartTimer);
-    clearInterval(this.pacer);
+    clearInterval(this.pacer);clearInterval(this.reporter);
     try{this.panel?.close();}catch(_){}
     try{this.listen?.stdin?.end();}catch(_){}
     this.stopPromise=(async()=>{

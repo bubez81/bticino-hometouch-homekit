@@ -617,6 +617,25 @@ def main():
                             incoming = client.stream.read_message(timeout=0.001)
                         except socket.timeout:
                             continue
+                        except (ConnectionError, OSError) as exc:
+                            # The gateway periodically closes every TLS connection of
+                            # this account. Media does not use it: reconnect and keep
+                            # the call; BYE then goes over the new connection.
+                            if isinstance(exc, socket.timeout):
+                                continue
+                            print(f'{time.strftime("%H:%M:%S")} SIP_CONNECTION_LOST', flush=True)
+                            try:
+                                client.sock.close()
+                            except Exception:
+                                pass
+                            try:
+                                client.connect()
+                                print(f'{time.strftime("%H:%M:%S")} SIP_RECONNECTED', flush=True)
+                            except Exception:
+                                time.sleep(1)
+                                client.connect()
+                                print(f'{time.strftime("%H:%M:%S")} SIP_RECONNECTED', flush=True)
+                            continue
                         incoming_headers, _ = lib.sip_headers(incoming)
                         if incoming_headers.get('call-id') != call:
                             continue
