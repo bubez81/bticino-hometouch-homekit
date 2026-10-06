@@ -73,6 +73,14 @@ blueprint:
           default: Hanno suonato
           selector:
             text: {}
+        sound:
+          name: Notification sound
+          description: >
+            iOS sound name, for example "default". The notification is
+            time-sensitive: it sounds unless Do Not Disturb or Sleep silences it.
+          default: default
+          selector:
+            text: {}
 
 mode: single
 max_exceeded: silent
@@ -84,6 +92,7 @@ variables:
   notify_devices: !input notify_devices
   title: !input title
   message: !input message
+  sound: !input sound
   # Unique per run: ties the notification buttons to this ring.
   prefix: "BTICINO_{{ now().timestamp() | int }}"
 
@@ -126,8 +135,11 @@ actions:
             data:
               tag: "{{ prefix }}"
               image: "/api/camera_proxy/{{ camera }}"
+              # Holding the notification shows the live camera; tapping opens it.
               entity_id: "{{ camera }}"
+              url: "entityId:{{ camera }}"
               push:
+                sound: "{{ sound }}"
                 interruption-level: time-sensitive
               actions: >
                 {% set ns = namespace(items=[]) %}

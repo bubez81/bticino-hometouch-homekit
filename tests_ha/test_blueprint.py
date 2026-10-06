@@ -74,6 +74,8 @@ async def test_ring_blueprint_runs_notifies_and_opens(hass):
     assert len(notifications) == 1, "the ring must send one notification"
     data = notifications[0].data["data"]
     assert data["tag"].startswith("BTICINO_")
+    assert data["push"] == {"sound": "default", "interruption-level": "time-sensitive"}
+    assert data["url"] == "entityId:camera.videocitofono_telecamera"
     assert [a["title"] for a in data["actions"]] == ["Apri scala"]
     hass.bus.async_fire("mobile_app_notification_action", {"action": data["actions"][0]["action"]})
     await hass.async_block_till_done()
