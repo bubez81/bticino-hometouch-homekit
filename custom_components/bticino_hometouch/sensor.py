@@ -12,7 +12,7 @@ from homeassistant.util import dt as dt_util
 from . import HometouchConfigEntry
 from .entity import HometouchEntity
 
-UNKNOWN_ENTRANCE = "unknown"
+NOT_RECOGNIZED = "not_recognized"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry,
@@ -40,7 +40,7 @@ class HometouchLastEntrance(HometouchEntity, SensorEntity):
 
     def __init__(self, hub) -> None:
         super().__init__(hub, "last_entrance")
-        self._attr_options = [*hub.entrances, UNKNOWN_ENTRANCE]
+        self._attr_options = [*hub.entrances, NOT_RECOGNIZED]
 
     @property
     def native_value(self) -> str | None:
@@ -48,4 +48,4 @@ class HometouchLastEntrance(HometouchEntity, SensorEntity):
         if not ring:
             return None
         entrance = ring.get("entrance")
-        return entrance if entrance in self.hub.entrances else UNKNOWN_ENTRANCE
+        return entrance if entrance in self.hub.entrances else NOT_RECOGNIZED

@@ -45,7 +45,7 @@ reported as an authentication error; a changed token can be updated through
 | `image.<device>_ultimo_visitatore` | visitor image of the latest ring |
 | `button.<device>_apri_<entrance>` | opening pulse per entrance; attribute `entrance` |
 | `sensor.<device>_ultima_suonata` | timestamp of the latest ring |
-| `sensor.<device>_ingresso_ultima_suonata` | entrance of the latest ring (`unknown` until recognised) |
+| `sensor.<device>_ingresso_ultima_suonata` | entrance of the latest ring (`not_recognized` until recognised) |
 | `binary_sensor.<device>_chiamata_in_corso` | an entrance panel call is active |
 | `binary_sensor.<device>_registrazione_sip` | the listener is registered with the gateway (diagnostic) |
 

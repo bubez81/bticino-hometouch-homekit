@@ -58,7 +58,7 @@ async def test_entities_events_and_opening(hass, listener):
     await wait_for(lambda: hass.states.get(doorbell).attributes.get("event_type") == "ring")
     assert hass.states.get("binary_sensor.videocitofono_chiamata_in_corso").state == "on"
     assert hass.states.get("binary_sensor.videocitofono_registrazione_sip").state == "on"
-    assert hass.states.get("sensor.videocitofono_ingresso_ultima_suonata").state == "unknown"
+    assert hass.states.get("sensor.videocitofono_ingresso_ultima_suonata").state == "not_recognized"
 
     listener.bus.publish("entrance_detected", call="abc123", entrance="scala")
     await wait_for(lambda: hass.states.get("sensor.videocitofono_ingresso_ultima_suonata").state == "scala")
