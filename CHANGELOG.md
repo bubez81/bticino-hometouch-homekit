@@ -4,6 +4,17 @@ Changes are dated by publication. This project remains experimental; entries
 describe implemented behavior separately from physical validation. No stable
 release or npm publication is implied.
 
+## 2026-10-06
+
+### Fixed
+
+- After a listener restart the API reported no last ring until the next call,
+  so Home Assistant showed *unknown* for the last ring and visitor. The
+  listener now restores the last ring time from the newest snapshot file name
+  (the entrance of that ring is not stored and stays unknown). The Home
+  Assistant image entity also picks up that time when the listener restarts
+  while Home Assistant is running.
+
 ## 2026-10-05
 
 ### Added

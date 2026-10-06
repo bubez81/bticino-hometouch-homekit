@@ -134,6 +134,20 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn(subscriber, self.bus.subscribers)
 
 
+class SeedTests(unittest.TestCase):
+    def test_seed_does_not_override_or_publish(self):
+        bus = EventBus()
+        subscriber = bus.subscribe()
+        bus.seed_last_ring('2026-10-05T15:03:14.000+00:00')
+        self.assertEqual(bus.snapshot_state()['last_ring'],
+                         {'time': '2026-10-05T15:03:14.000+00:00', 'call': None, 'entrance': None})
+        self.assertTrue(subscriber.empty())
+        bus.publish('ring', call='new')
+        bus.seed_last_ring('2020-01-01T00:00:00.000+00:00')
+        self.assertEqual(bus.snapshot_state()['last_ring']['call'], 'new')
+        bus.seed_last_ring(None)
+
+
 class StartTests(unittest.TestCase):
     def test_disabled_by_default(self):
         self.assertIsNone(bticino_api.start({}, EventBus(), dict, None, None))

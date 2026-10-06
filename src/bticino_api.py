@@ -76,6 +76,12 @@ class EventBus:
         elif kind == 'entrance_open':
             self.state['last_entrance_open'] = {k: event.get(k) for k in ('time', 'entrance', 'result')}
 
+    def seed_last_ring(self, when):
+        """Restore the last ring time after a restart, without publishing a ring."""
+        with self.lock:
+            if self.state['last_ring'] is None and when:
+                self.state['last_ring'] = {'time': when, 'call': None, 'entrance': None}
+
     def snapshot_state(self):
         with self.lock:
             return json.loads(json.dumps(self.state))

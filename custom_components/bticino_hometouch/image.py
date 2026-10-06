@@ -42,4 +42,8 @@ class HometouchLastVisitor(HometouchEntity, ImageEntity):
         if event and event.get("type") == "snapshot_ready":
             self._image = None
             self._attr_image_last_updated = dt_util.utcnow()
+        elif event and event.get("type") == "state" and self._attr_image_last_updated is None:
+            ring = event.get("last_ring") or {}
+            if ring.get("time"):
+                self._attr_image_last_updated = dt_util.parse_datetime(ring["time"])
         self.async_write_ha_state()
