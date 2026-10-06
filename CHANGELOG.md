@@ -11,10 +11,12 @@ release or npm publication is implied.
 - Live video for Home Assistant through go2rtc. `src/bticino_live_source.py` is
   a go2rtc `exec:` source: during a ring it relays the call's video, otherwise
   it places an on-demand camera call (`start_call`) and closes it when the last
-  viewer leaves. It retries once when no video arrives within 12 seconds, falls
-  back to the latest snapshot when the camera is busy, relays through FFmpeg's
-  stdin so no FFmpeg process outlives it, and starts a watchdog that closes the
-  camera call if the source is killed.
+  viewer leaves. It never retries a camera call: when the camera is busy, when
+  the previous call ended less than 20 seconds ago, or when no video arrives
+  within 12 seconds, it keeps the stream alive with the latest snapshot. It
+  relays through FFmpeg's stdin so no FFmpeg process outlives it, starts a
+  watchdog that closes the camera call if the source is killed, and can log to
+  a file (`--log`), since go2rtc hides an exec source's output.
 - The API advertises an optional `live_rtsp_url` (listener `api.live_rtsp_url`,
   validated by `validate_config.py`) to authenticated clients only. The Home
   Assistant camera then supports streaming and plays it with WebRTC through
@@ -27,8 +29,10 @@ release or npm publication is implied.
 - On the test installation the go2rtc RTSP stream delivered H.264 400×288 from
   an on-demand camera call, and no process or call remained after the viewer
   left. Three manual camera calls each delivered about 575 RTP packets in 25 s.
-  Calls started while the previous one was still closing delivered no video;
-  this motivates the retry.
+  With Home Assistant reopening a failing stream and the source retrying, dozens
+  of back-to-back camera calls stopped delivering video for several minutes,
+  while spaced calls always worked. Removing the retry and adding the cooldown
+  fixed it: Home Assistant played the live stream from a single on-demand call.
 
 ### Fixed
 
