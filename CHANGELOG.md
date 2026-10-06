@@ -17,10 +17,15 @@ release or npm publication is implied.
   forwards any audio track. Sending needs an FFmpeg with `libspeex`, configured
   as `audio_ffmpeg` in the listener config or `BTICINO_AUDIO_FFMPEG`. Without
   `--audio` the offer is unchanged, so Apple Home live view is not affected.
+- Camera calls started through IPC are logged to `camera-calls.log` next to the
+  probe (`BTICINO_CAMERA_LOG`, mode 600, rotated at 1 MB): start time, progress
+  every 10 s with timestamps, remote hang-up, end of call and FFmpeg errors.
+  The probe prints no keys, addresses or credentials. Previously this output was
+  discarded, so a live stream that stopped could not be explained.
 - Validation: on the test installation the gateway accepted the Speex offer and
   sent about 47 audio packets per second; a 20-second call produced H.264
   400×288 with Opus 48 kHz. Audio with a G.711 offer, or without client audio,
-  was never received.
+  was never received. Panel sound was heard in the Home Assistant live view.
 
 - Live video for Home Assistant through go2rtc. `src/bticino_live_source.py` is
   a go2rtc `exec:` source: during a ring it relays the call's video, otherwise

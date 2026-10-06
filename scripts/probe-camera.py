@@ -68,8 +68,9 @@ class FrameDecoder:
                 command += ['-an']
             command += ['-map', '0:v:0', '-vf', 'select=gte(n\\,10)',
                         '-frames:v', '1', '-q:v', '2', '-y', str(self.frame)]
-            self.process = subprocess.Popen(command,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # FFmpeg errors go to the probe's stderr (the camera call log); the key is
+            # only in the private SDP file, never on the command line.
+            self.process = subprocess.Popen(command, stdout=subprocess.DEVNULL)
         except Exception:
             self.close()
             raise
@@ -453,7 +454,7 @@ def main():
                                     decoder.feed_audio(data, rtcp=is_rtcp)
                     now = time.monotonic()
                     if now >= next_media_report:
-                        print(f'MEDIA_PROGRESS rtp_packets={packets} audio_packets={audio_packets} decoder_running={decoder is not None and decoder.process.poll() is None}', flush=True)
+                        print(f'{time.strftime("%H:%M:%S")} MEDIA_PROGRESS rtp_packets={packets} audio_packets={audio_packets} decoder_running={decoder is not None and decoder.process.poll() is None}', flush=True)
                         next_media_report = now+10
                     if now >= next_signal_poll:
                         next_signal_poll = now+0.2
@@ -467,7 +468,7 @@ def main():
                         method = lib.sip_first_line(incoming).split(' ', 1)[0]
                         if method == 'BYE':
                             client.respond_basic(incoming, 200, 'OK')
-                            print('REMOTE_BYE received=True', flush=True)
+                            print(f'{time.strftime("%H:%M:%S")} REMOTE_BYE received=True', flush=True)
                             finished = remote_ended = True
                             break
                         if method == 'OPTIONS':
@@ -481,7 +482,7 @@ def main():
                     break
                 client.send(request('BYE', target, to, cseq+1, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
                 deadline = time.monotonic()+5
-        print(f'PROBE accepted={accepted} rtp_packets={packets} audio_packets={audio_packets} cancel_sent={cancelled} termination_confirmed={finished}')
+        print(f'{time.strftime("%H:%M:%S")} PROBE accepted={accepted} rtp_packets={packets} audio_packets={audio_packets} cancel_sent={cancelled} termination_confirmed={finished}')
         print('Prova isolata: non conferma HomeKit live.')
     finally:
         if sender:

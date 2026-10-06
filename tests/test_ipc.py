@@ -32,6 +32,14 @@ class IpcTests(unittest.TestCase):
                 self.assertTrue(bticino_ipc.handle_request(request)['ok'])
                 self.assertEqual('--audio' in spawn.call_args.args[0], expected)
 
+    def test_start_call_logs_to_private_camera_log(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(bticino_ipc, 'CAMERA_LOG', str(Path(tmp) / 'calls.log')), patch.object(bticino_ipc, '_incoming_state', None), patch.object(bticino_ipc, '_call_process', None), patch.dict('os.environ', BTICINO_IPC_ENABLE_CALLS='1'), patch.object(bticino_ipc.subprocess, 'Popen') as spawn:
+            bticino_ipc.handle_request({'command': 'start_call', 'session_id': 's', 'video_port': 40000, 'audio': True})
+            log = Path(tmp) / 'calls.log'
+            self.assertIn('start_call candidate=1 audio=True', log.read_text())
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(spawn.call_args.kwargs['stderr'], bticino_ipc.subprocess.STDOUT)
+
     def test_stop_allows_sip_cleanup_before_kill(self):
         process = Mock()
         process.poll.return_value = None
