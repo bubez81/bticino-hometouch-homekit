@@ -8,6 +8,7 @@ import socket
 import socketserver
 import subprocess
 import threading
+import time
 import sys
 from pathlib import Path
 
@@ -15,6 +16,8 @@ SOCKET_PATH = Path(os.environ.get("BTICINO_IPC_SOCKET", "/tmp/bticino-hometouch.
 SNAPSHOT_DIR = Path(os.environ.get("BTICINO_SNAPSHOT_DIR", "~/.config/bticino-hometouch/snapshots")).expanduser()
 CAMERA_PROBE = os.environ.get("BTICINO_CAMERA_PROBE", "/opt/bticino-sniffer/probe-camera.py")
 CAMERA_CANDIDATES = os.environ.get("BTICINO_CAMERA_CANDIDATES", "/opt/bticino-sniffer/camera-candidates.json")
+CAMERA_LOG = os.environ.get("BTICINO_CAMERA_LOG") or str(Path(CAMERA_PROBE).parent / "camera-calls.log")
+CAMERA_LOG_MAX_BYTES = 1_000_000
 _call_process = None
 _call_lock = threading.Lock()
 _last_event = None
@@ -29,6 +32,21 @@ def set_incoming_state(state):
     global _incoming_state
     with _call_lock:
         _incoming_state = dict(state) if state else None
+
+
+def open_camera_log(header):
+    """Append-only call log; the probe prints no keys, addresses or credentials."""
+    try:
+        path = Path(CAMERA_LOG)
+        if path.exists() and path.stat().st_size > CAMERA_LOG_MAX_BYTES:
+            path.replace(path.with_suffix(path.suffix + ".1"))
+        handle = open(path, "a", encoding="utf-8")
+        os.chmod(path, 0o600)
+        handle.write(f"=== {time.strftime('%Y-%m-%d %H:%M:%S')} {header}\n")
+        handle.flush()
+        return handle
+    except OSError:
+        return None
 
 
 def handle_request(request: dict) -> dict:
@@ -67,10 +85,28 @@ def handle_request(request: dict) -> dict:
             if not isinstance(owner, str) or not owner or not isinstance(port, int) or not 1024 <= port <= 65535:
                 return {"ok": False, "error": "invalid_stream_session"}
             environment = dict(os.environ, BTICINO_LIVE_VIDEO_PORT=str(port))
-            _call_process = subprocess.Popen([
+            environment.pop("BTICINO_LIVE_AUDIO_PORT", None)
+            audio_port = request.get('audio_port')
+            if audio_port is not None:
+                if request.get('audio') is not True or not isinstance(audio_port, int) or not 1024 <= audio_port <= 65535:
+                    return {"ok": False, "error": "invalid_audio_port"}
+                environment["BTICINO_LIVE_AUDIO_PORT"] = str(audio_port)
+            command = [
                 sys.executable, CAMERA_PROBE, "--candidates", CAMERA_CANDIDATES,
                 "--candidate", candidate, "--prime-udp", "--stream", "--duration", "300",
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environment)
+            ]
+            if request.get('audio') is True:
+                command.append("--audio")
+            log = open_camera_log(f"start_call candidate={candidate} audio={'--audio' in command}")
+            try:
+                # Own session: a listener restart must not kill the call before it
+                # sends BYE; the probe ends the call itself when the listener is gone.
+                _call_process = subprocess.Popen(command, stdout=log or subprocess.DEVNULL,
+                                                 stderr=subprocess.STDOUT if log else subprocess.DEVNULL,
+                                                 env=environment, start_new_session=True)
+            finally:
+                if log:
+                    log.close()
             _call_owner = owner
         return {"ok": True, "command": command, "state": "calling"}
     if command == "stop_call":

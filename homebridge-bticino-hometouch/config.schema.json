@@ -12,6 +12,8 @@
       ,"enableHapLive": {"type": "boolean", "default": false}
       ,"enableCamera": {"type": "boolean", "default": false}
       ,"enableTwoWayAudio": {"type": "boolean", "default": false}
+      ,"liveAudio": {"type": "boolean", "default": true, "description": "On-demand live view carries the entrance panel sound and, when Home unmutes the microphone, your voice. Needs enableTwoWayAudio and audio_ffmpeg (FFmpeg with libspeex) in the listener config."}
+      ,"talkPort": {"type": "integer", "minimum": 1024, "maximum": 65535, "default": 22310}
       ,"enableCallUnlock": {"type": "boolean", "default": false}
       ,"separateCallUnlock": {"type": "boolean", "default": false}
       ,"standalone": {"type": "boolean", "default": false}

@@ -57,6 +57,17 @@ class ListenerTests(unittest.TestCase):
             ipc.set_incoming_state.assert_called_with(None)
         self.assertEqual(self.client.incoming_dialogs, {})
 
+    def test_answered_call_is_not_cut_after_35_seconds(self):
+        self.capture.poll.return_value = False
+        self.dialog.answer('owner', 'sdp', audio_ready=True)
+        with patch.object(listener, 'IPC_MODULE'), patch.object(listener.time, 'time', return_value=1000.0):
+            self.capture.started = 1000.0 - 60
+            self.client.maintain_media()
+            self.capture.stop.assert_not_called()
+            self.capture.started = 1000.0 - listener.ANSWERED_MEDIA_TIMEOUT - 1
+            self.client.maintain_media()
+        self.capture.stop.assert_called_once_with('timeout')
+
     def test_explicit_answer_muted_preserves_microphone_gate(self):
         self.capture.attachment = Mock(owner='home', allowed=True)
         with patch.object(self.client, 'publish_incoming_state'):

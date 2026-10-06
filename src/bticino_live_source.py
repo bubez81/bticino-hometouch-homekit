@@ -68,7 +68,7 @@ def ffmpeg_command(ffmpeg, output):
             '-fflags', 'nobuffer+genpts', '-flags', 'low_delay',
             '-analyzeduration', '1000000', '-probesize', '500000',
             '-f', 'mpegts', '-i', 'pipe:0',
-            '-map', '0:v:0', '-c:v', 'copy', '-an',
+            '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
             '-f', 'rtsp', '-rtsp_transport', 'tcp', output]
 
 
@@ -89,7 +89,7 @@ def log(message):
 class LiveSource:
     def __init__(self, ipc, ffmpeg, output, candidate='1', spawn=subprocess.Popen,
                  open_udp=udp_socket, clock=time.monotonic, watchdog=None,
-                 cooldown_file=COOLDOWN_FILE, wall=time.time):
+                 cooldown_file=COOLDOWN_FILE, wall=time.time, audio=True):
         self.ipc = ipc
         self.ffmpeg = ffmpeg
         self.output = output
@@ -100,6 +100,7 @@ class LiveSource:
         self.watchdog = watchdog
         self.cooldown_file = cooldown_file
         self.wall = wall
+        self.audio = audio
         self.session = f'go2rtc-{os.getpid()}'
         self.call_started = False
         self.process = None
@@ -110,7 +111,8 @@ class LiveSource:
     def _start_call(self):
         try:
             result = self.ipc({'command': 'start_call', 'candidate': self.candidate,
-                               'session_id': self.session, 'video_port': self.udp.getsockname()[1]})
+                               'session_id': self.session, 'video_port': self.udp.getsockname()[1],
+                               'audio': self.audio})
         except (OSError, ValueError) as error:
             result = {'ok': False, 'error': str(error)}
         if result.get('ok'):
@@ -247,11 +249,13 @@ def main():
     parser.add_argument('--socket', default=DEFAULT_SOCKET)
     parser.add_argument('--candidate', default='1', choices=['1', '2', '3', '4'])
     parser.add_argument('--log', help='append diagnostics to this file (go2rtc hides stderr)')
+    parser.add_argument('--no-audio', action='store_true', help='video only; do not ask for the entrance panel audio')
     args = parser.parse_args()
     global LOG_FILE
     LOG_FILE = args.log
     source = LiveSource(lambda request: ipc_request(args.socket, request), args.ffmpeg,
-                        args.output, args.candidate, watchdog=watchdog_process(args.socket))
+                        args.output, args.candidate, watchdog=watchdog_process(args.socket),
+                        audio=not args.no_audio)
     state = {'running': True}
 
     def finish(*_args):

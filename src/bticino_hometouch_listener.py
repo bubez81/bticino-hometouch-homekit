@@ -27,6 +27,7 @@ from urllib.request import urlopen
 from bticino_incoming_dialog import IncomingDialog
 from bticino_audio_offer import parse_audio_offer
 from bticino_homekit_call import CallCommands, MediaAttachment
+from bticino_incoming_audio import CODECS as INCOMING_AUDIO_CODECS, IncomingAudio
 from bticino_call_unlock import open_current_call
 from bticino_entrance_open import EntranceOpener
 import bticino_api
@@ -97,6 +98,8 @@ RECONNECT_STABLE_AFTER = float(CONFIG.get("reconnect_stable_after", 30.0))
 
 USER_AGENT = "HOMETOUCH-Diagnostic-Listener/1.0"
 MEDIA_TIMEOUT = 30
+# An answered call lasts until the panel ends it; this is only a safety limit.
+ANSWERED_MEDIA_TIMEOUT = 180
 MEDIA_PORT_START = 2202
 MEDIA_PORT_END = 2213
 INTERNAL_MEDIA_PORT_START = 22202
@@ -437,7 +440,7 @@ def api_publish(event_type, call_id=None, **data):
 
 
 def api_snapshot(width=None, height=None):
-    path = PLACEHOLDER_SNAPSHOT if snapshot_pending() else latest_snapshot()
+    path = pending_snapshot() if snapshot_pending() else latest_snapshot()
     try:
         image = path.read_bytes() if path else None
     except OSError:
@@ -503,6 +506,14 @@ def snapshot_pending():
         return bool(PENDING_CALLS)
 
 
+def pending_snapshot():
+    # Apple Home builds the ring notification from the snapshot it fetches at
+    # once. Real rings, served a flat placeholder, produced no notification
+    # while test rings with a real image did; serve the latest real image until
+    # the new one is ready.
+    return latest_snapshot() or PLACEHOLDER_SNAPSHOT
+
+
 def ensure_placeholder_snapshot():
     cmd = [
         FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin",
@@ -520,7 +531,7 @@ class SnapshotHandler(BaseHTTPRequestHandler):
         if self.path.split("?", 1)[0] != "/snapshot.jpg":
             self.send_error(404)
             return
-        path = (PLACEHOLDER_SNAPSHOT if snapshot_pending() else latest_snapshot())
+        path = (pending_snapshot() if snapshot_pending() else latest_snapshot())
         if not path:
             self.send_error(503, "Snapshot non ancora disponibile")
             return
@@ -906,6 +917,7 @@ class EarlyMediaCapture:
         self.audio_key = base64.b64encode(os.urandom(30)).decode("ascii")
         self.audio_sockets = []
         self.attachment = None
+        self.incoming_audio = None
         self.two_way_enabled = CONFIG.get('incoming_audio') is True or os.environ.get('BTICINO_INCOMING_AUDIO') == '1'
         self.audio_packets = 0
         self.answer_key = base64.b64encode(os.urandom(30)).decode("ascii")
@@ -979,6 +991,20 @@ class EarlyMediaCapture:
                 sock.bind((self.local_ip, port))
                 sock.setblocking(False)
                 self.audio_sockets.append(sock)
+            if self.two_way_enabled and self.audio.get('can_talk') and self.audio['codec'] in INCOMING_AUDIO_CODECS:
+                # The panel sends its sound only while it receives ours: send
+                # silence (or the viewer's speech) for the whole call.
+                try:
+                    self.incoming_audio = IncomingAudio(
+                        FFMPEG, CONFIG.get('audio_ffmpeg') or FFMPEG, self.audio, self.audio_key,
+                        self.audio_sockets,
+                        ((self.audio['address'], self.audio['port']),
+                         (self.audio['rtcp_address'], self.audio['rtcp_port'])),
+                        on_packet=self.forward_audio, log=log)
+                    self.incoming_audio.start()
+                except Exception as exc:
+                    log(f"Audio chiamata non avviato: {type(exc).__name__}")
+                    self.incoming_audio = None
         for port in (self.local_port, self.local_port + 1):
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1044,8 +1070,13 @@ class EarlyMediaCapture:
         )
         set_snapshot_pending(self.call_id, True)
 
+    def forward_audio(self, offset, packet):
+        attachment = self.attachment
+        if attachment:
+            attachment.forward('audio', offset, packet)
+
     def poll(self):
-        for sock in self.audio_sockets:
+        for sock in ([] if self.incoming_audio else self.audio_sockets):
             while True:
                 try:
                     packet, peer = sock.recvfrom(65535)
@@ -1201,6 +1232,10 @@ class EarlyMediaCapture:
             self.relay_sender = None
 
     def close_audio(self):
+        if self.incoming_audio:
+            log(f"Audio chiamata: ricevuti={self.incoming_audio.panel_packets} voce={self.incoming_audio.talk_bytes} byte")
+            self.incoming_audio.close()
+            self.incoming_audio = None
         if self.attachment:
             self.attachment.close()
             self.attachment = None
@@ -1266,7 +1301,17 @@ class HomtouchListener:
             if capture.attachment:
                 return {'ok': False, 'error': 'incoming_call_owned'}
             capture.attachment = MediaAttachment(capture, owner, request.get('video_port'), request.get('audio_port'))
-            return capture.attachment.description()
+            result = capture.attachment.description()
+            if capture.incoming_audio and request.get('pcm_port') is not None:
+                try:
+                    capture.incoming_audio.set_listener(request.get('pcm_port'))
+                    result['pcm'] = True
+                except ValueError:
+                    capture.attachment.close()
+                    capture.attachment = None
+                    return {'ok': False, 'error': 'invalid_pcm_port'}
+            result['talk'] = capture.incoming_audio is not None
+            return result
         for call_id, capture in list(self.media.items()):
             attachment = capture.attachment
             if not attachment or attachment.owner != owner:
@@ -1275,6 +1320,8 @@ class HomtouchListener:
             if command == 'answer_incoming':
                 if type(request.get('enabled')) is not bool:
                     return {'ok': False, 'error': 'invalid_talk_state'}
+                if capture.incoming_audio:
+                    capture.incoming_audio.allow_talk(request['enabled'])
                 if not request['enabled']:
                     attachment.allowed = False
                     if request.get('answer') is True:
@@ -1288,6 +1335,8 @@ class HomtouchListener:
                 self.publish_incoming_state()
                 return {'ok': True}
             if command == 'release_incoming':
+                if capture.incoming_audio:
+                    capture.incoming_audio.allow_talk(False)
                 if dialog.state in ('answered', 'established'):
                     dialog.hangup(owner)
                 attachment.close()
@@ -1706,7 +1755,7 @@ class HomtouchListener:
             if capture.poll():
                 self.media.pop(call_id, None)
                 api_publish("call_ended", call_id=call_id, reason="media_ended")
-            elif time.time() - capture.started > MEDIA_TIMEOUT + 5:
+            elif time.time() - capture.started > self.media_limit(call_id):
                 capture.stop("timeout")
                 self.media.pop(call_id, None)
                 api_publish("call_ended", call_id=call_id, reason="timeout")
@@ -1716,6 +1765,14 @@ class HomtouchListener:
                 self.dialog_tags.pop(call_id, None)
         self.publish_incoming_state()
 
+
+    def media_limit(self, call_id):
+        # Unanswered rings only feed snapshots and notifications; once answered
+        # from Home, the conversation must not be cut after 35 seconds.
+        dialog = self.incoming_dialogs.get(call_id)
+        if dialog is not None and dialog.state in ('answered', 'established'):
+            return ANSWERED_MEDIA_TIMEOUT
+        return MEDIA_TIMEOUT + 5
 
     def publish_incoming_state(self):
         if IPC_MODULE is not None:

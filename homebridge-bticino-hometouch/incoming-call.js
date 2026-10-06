@@ -3,9 +3,8 @@ const dgram=require('node:dgram');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const crypto=require('node:crypto');
 const ipc=require('./ipc');
-const {TwoWayAudio}=require('./two-way-audio');
+const {LiveAudio,TALK_PORT}=require('./live-audio');
 
 async function pair() {
   for(let attempt=0;attempt<20;attempt++) {
@@ -33,31 +32,29 @@ class IncomingCall {
     const {manager,session:s,request:req}=this;
     if(req.audio?.codec!=='OPUS'||req.audio.channel!==1||req.audio.sample_rate!==24)throw Error('Unsupported HomeKit audio');
     try {
-      for(let i=0;i<4;i++)this.pairs.push(await pair());
-      const [video,door,home,out]=this.pairs;
+      for(let i=0;i<3;i++)this.pairs.push(await pair());
+      const [video,door,out]=this.pairs;
+      // Same audio path as the on-demand live view: the listener decodes the
+      // panel to PCM and sends silence or our speech; we re-encode for HomeKit
+      // and pass the iPhone microphone to the listener's talk port.
+      this.audio=new LiveAudio({ffmpeg:manager.config.audioFfmpegPath||manager.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg',
+        log:manager.log,key:s.req.audio.srtp_key,salt:s.req.audio.srtp_salt,pt:req.audio.pt,ssrc:s.audioSsrc,
+        packetTime:req.audio.packet_time,homekitPort:out.port,talkPort:manager.config.talkPort||TALK_PORT});
+      await this.audio.start();
       const result=await ipc.request(manager.socketPath,'attach_incoming',{
-        session_id:s.id,video_port:video.port,audio_port:door.port},4000);
+        session_id:s.id,video_port:video.port,audio_port:door.port,pcm_port:this.audio.panelPort},4000);
       if(!result.ok)throw Error(result.error);
       this.attached=true;
+      if(!result.pcm)manager.log.warn('BTicino incoming call: the listener offers no panel audio');
       this.directory=fs.mkdtempSync(path.join(os.tmpdir(),'bticino-incoming-'));
       fs.chmodSync(this.directory,0o700);
       this.videoPath=path.join(this.directory,'video.sdp');
       material(result.video.material);
       if(!/^\d+$/.test(String(result.video.payload))||/[\r\n]/.test(result.video.fmtp||''))throw Error('Invalid incoming video');
       fs.writeFileSync(this.videoPath,`v=0\no=- 0 0 IN IP4 127.0.0.1\ns=Incoming doorbell\nc=IN IP4 127.0.0.1\nt=0 0\nm=video ${video.port} RTP/SAVP ${result.video.payload}\na=rtpmap:${result.video.payload} H264/90000\na=rtcp:${video.port+1}\na=fmtp:${result.video.payload} ${result.video.fmtp||''}\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:${result.video.material}\n`,{mode:0o600,flag:'wx'});
-      video.close();door.close();home.close();
-      const homeBase={codec:'OPUS',rate:24000,channels:1,...material(Buffer.concat([s.req.audio.srtp_key,s.req.audio.srtp_salt]).toString('base64'))};
-      const doorBase={codec:result.audio.codec,rate:result.audio.codec==='OPUS'?48000:8000,channels:1,pt:Number(result.audio.payload)};
-      this.homePort=home.port;
+      video.close();door.close();
       for(const socket of out.sockets)socket.on('message',(packet,peer)=>{
         if(peer.address==='127.0.0.1')s.audioSocket.send(packet,s.req.audio.port,s.req.targetAddress,()=>{});
-      });
-      this.audio=new TwoWayAudio(manager.config.audioFfmpegPath||manager.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg',manager.log);
-      await this.audio.start({
-        homeInput:{...homeBase,port:home.port,pt:req.audio.pt},
-        doorInput:{...doorBase,...material(result.audio.material),port:door.port},
-        homeOutput:{...homeBase,port:out.port,pt:req.audio.pt,ssrc:s.audioSsrc},
-        doorOutput:{...doorBase,...material(result.audio.return_material),port:result.audio.return_port,ssrc:crypto.randomBytes(4).readUInt32BE()||1},
       });
       this.ready=true;
     }catch(error){await this.close();throw error;}
@@ -65,10 +62,8 @@ class IncomingCall {
   receive(packet,peer) {
     const s=this.session;
     if(!this.ready||peer.address!==s.req.targetAddress||peer.port!==s.req.audio.port)return;
-    if(packet.length<12)return;
-    const rtcp=packet[1]>=192&&packet[1]<=223;
-    if(!rtcp&&!this.talkEnabled)return;
-    s.audioSocket.send(packet,this.homePort+(rtcp?1:0),'127.0.0.1',()=>{});
+    // iPhone microphone: reaches the door only while Home's speaker is unmuted.
+    if(this.talkEnabled)this.audio.receiveTalk(packet);
   }
   async talk(enabled) {
     if(!this.ready)return;

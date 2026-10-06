@@ -5,8 +5,9 @@
 keeps doing all SIP work; Home Assistant can run on another host.
 
 Status (2026-10): experimental. Tested with Home Assistant 2026.9/2026.10 and the
-automated test suite in `tests_ha/`; a real outdoor ring in Home Assistant is
-still being validated.
+automated test suite in `tests_ha/`. Verified on one installation: real ring
+events, the notification with snapshot and sound, opening from the
+notification, live video with the panel's sound.
 
 ## 1. Enable the API on the listener host
 
@@ -68,6 +69,19 @@ devices and a button that opens **only the entrance that rang**. If the entrance
 is not recognised in time, every entrance is offered (up to four). The button in
 the notification stays valid for a configurable time (default two minutes).
 
+- **Sound:** the notification plays the iOS sound set in *Notification sound*
+  (default `default`). With an Apple Watch on the wrist and the iPhone locked,
+  iOS plays it on the watch; with the iPhone in use and the Home Assistant app
+  open it may arrive silently.
+- **Hold:** holding the notification shows the camera live (without sound).
+- **Tap:** *Page opened by tapping the notification* sets the Home Assistant
+  path to open. The iOS app opens only paths, not entity dialogs, so point it to
+  a dashboard view with the camera, for example a view with a `picture-entity`
+  card (`camera_view: live`) whose tap opens the camera dialog with sound.
+
+Re-import the blueprint after updating: earlier versions stopped at every real
+ring with `'context' is undefined` and sent no notification.
+
 ## 5. Live video (go2rtc)
 
 The camera streams live when the listener advertises an RTSP source:
@@ -92,6 +106,30 @@ less than 20 seconds ago, or when no video arrives within 12 seconds, it shows
 the latest snapshot instead. Expect the first image after about 5 seconds. Add
 `--log <file>` to the stream command to see what the source did.
 
+**Audio.** The on-demand call also carries the entrance panel's audio, as in the
+official app. The gateway accepts audio only as Speex (8 kHz) in both directions
+and sends the panel's sound only while it receives audio from the client, so
+the camera call transmits silence and transcodes what it receives to Opus for
+WebRTC. Sending Speex needs an FFmpeg built with `libspeex`; Homebrew's FFmpeg
+lacks it, while the one bundled with `ffmpeg-for-homebridge` has it. Set its
+path as `audio_ffmpeg` in the listener `config.json` (or `BTICINO_AUDIO_FFMPEG`);
+the listener does not need a restart. Without such an FFmpeg the stream keeps
+working with video only. Add `--no-audio` to the stream command to never ask for
+audio. During a ring the stream remains video only. Home Assistant's camera
+players start muted: unmute them in the camera dialog.
+
+**Talking (experimental).** go2rtc can pass a browser microphone to the camera
+call through a backchannel source, `src/bticino_talk_relay.py`, which forwards
+the viewer's 8-kHz A-law audio to the call's talk port; the call sends it to
+the door instead of silence. go2rtc's RTSP server does not relay the
+backchannel, so Home Assistant's built-in go2rtc cannot be used for it: the
+browser must reach the listener host's go2rtc directly, with the *WebRTC
+Camera* card (`media: video,audio,microphone`), its integration pointed at that
+go2rtc (API with username and password, WebRTC port 8555) and Home Assistant
+opened over HTTPS (browsers grant the microphone only to secure pages). On the
+test installation the browser microphone reached the call; playback at the door
+and answering a ring from Home Assistant are not implemented or verified yet.
+
 ## 6. MQTT locks and HomeKit
 
 Existing MQTT locks fed by `bticino_mqtt_bridge.py` keep working; the buttons
@@ -113,4 +151,6 @@ python -m pytest tests_ha -q
 The tests start the real listener API module on loopback and drive the
 integration in a test Home Assistant instance: config flow, entities, ring and
 entrance events, opening and camera images. The blueprint is validated with Home
-Assistant's own blueprint and automation schemas.
+Assistant's own blueprint and automation schemas and run end to end: ring,
+notification with the entrance that rang, opening from the notification
+button.

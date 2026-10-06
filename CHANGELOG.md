@@ -8,6 +8,63 @@ release or npm publication is implied.
 
 ### Added
 
+- Two-way audio during a ring (Apple Home). The listener now answers the
+  panel's call with Speex when offered and, as on camera calls, sends a
+  continuous encrypted stream from the start of the call: silence, or the
+  iPhone microphone while Home's talk button is on
+  (`src/bticino_incoming_audio.py`). The panel's sound is decoded to PCM for
+  the plugin, which reuses the live-view audio path (jitter buffer, HomeKit
+  Opus, microphone to the talk port). Before, the call carried no client
+  audio, so the panel sent none and talking never reached the door. Verified
+  with a real ring: notification, live video, panel sound and speech at the
+  door. An answered call is no longer cut 35 seconds after the ring (a limit
+  meant for unanswered rings); it lasts until the panel ends it, at most
+  three minutes.
+- While a ring's snapshot is being taken, the snapshot endpoint serves the
+  latest real image instead of a flat placeholder. Test rings with a real image
+  produced an Apple Home notification while real rings, served the
+  placeholder, did not; whether this was the cause is not yet confirmed.
+- Real audio in the Apple Home live view (Homebridge plugin, `liveAudio`,
+  default on with `enableTwoWayAudio`). Until now the on-demand live view sent
+  HomeKit synthetic silence (logged as `HomeKit diagnostic audio: silence
+  only`), because the camera call had audio disabled. The plugin now asks for
+  an audio call (`start_call` with `audio` and `audio_port`), re-encodes the
+  entrance panel's sound for HomeKit, and, while Home unmutes the microphone,
+  sends the iPhone's voice to the call's talk port. `test-live-audio.js`
+  checks both directions with real encoders. A 200-ms jitter buffer feeds the
+  HomeKit encoder at a steady rate: on the test installation the panel's audio
+  arrived in bursts (gaps of 80–180 ms, once 742 ms, then catch-up), which made
+  it come and go in Apple Home. Panel sound was heard in Apple Home; speaking
+  from Home to the door is not yet verified. The entrance panel ends a call with
+  audio after about 60 seconds; the plugin then opens a new one.
+- Ring blueprint: the notification plays a sound (`sound`, default iOS
+  `default`) and tapping it opens a configurable Home Assistant page
+  (`tap_url`; the iOS app opens paths, not entity dialogs). Holding it shows
+  the camera live.
+- Speaking from Home Assistant: a go2rtc backchannel source
+  (`src/bticino_talk_relay.py`) forwards the viewer's microphone to the camera
+  call, which sends it to the door instead of silence. On the test
+  installation the browser microphone reached the call; playback at the door
+  is not yet verified. go2rtc's RTSP server does not relay the backchannel, so
+  the browser must use the listener host's go2rtc (WebRTC Camera card).
+- Entrance-panel audio in the Home Assistant live stream. With the new
+  `--audio` option the camera probe offers Speex 8 kHz send/receive, as the
+  official app does, sends encrypted Speex silence (the gateway transmits the
+  panel's sound only while it receives client audio), and adds the received
+  audio to the MPEG-TS stream as Opus. IPC `start_call` accepts `"audio": true`;
+  the go2rtc source requests it by default (`--no-audio` turns it off) and
+  forwards any audio track. Sending needs an FFmpeg with `libspeex`, configured
+  as `audio_ffmpeg` in the listener config or `BTICINO_AUDIO_FFMPEG`. Without
+  `--audio` the offer is unchanged, so Apple Home live view is not affected.
+- Camera calls started through IPC are logged to `camera-calls.log` next to the
+  probe (`BTICINO_CAMERA_LOG`, mode 600, rotated at 1 MB): start time, progress
+  every 10 s with timestamps, remote hang-up, end of call and FFmpeg errors.
+  The probe prints no keys, addresses or credentials. Previously this output was
+  discarded, so a live stream that stopped could not be explained.
+- Validation: on the test installation the gateway accepted the Speex offer and
+  sent about 47 audio packets per second; a 20-second call produced H.264
+  400×288 with Opus 48 kHz. Audio with a G.711 offer, or without client audio,
+  was never received. Panel sound was heard in the Home Assistant live view.
 - Live video for Home Assistant through go2rtc. `src/bticino_live_source.py` is
   a go2rtc `exec:` source: during a ring it relays the call's video, otherwise
   it places an on-demand camera call (`start_call`) and closes it when the last
@@ -36,6 +93,25 @@ release or npm publication is implied.
 
 ### Fixed
 
+- Ring blueprint: every real ring stopped with `UndefinedError: 'context' is
+  undefined`, so Home Assistant sent no notification. The notification tag now
+  uses the run time. Re-import the blueprint. `tests_ha` now runs the
+  automation end to end (ring, notification with the entrance that rang,
+  opening from the notification button) instead of validating the schema only.
+- Homebridge plugin: random RTP SSRCs above 2^31-1 made FFmpeg refuse the
+  stream ("Error setting option ssrc … Result too large"), so about half of
+  the Apple Home live views lost their audio after a few seconds, and the same
+  could stop the video encoder. SSRCs are now chosen in FFmpeg's range. The
+  plugin also no longer logs `Error: Not running` when the encoder flushes
+  packets while a session closes.
+- Closing a camera call (`stop_call`, end of a live view) did not work: the
+  probe imported the listener module, whose import-time SIGTERM handler replaced
+  the probe's own. The probe ignored the stop request, was killed after 8 s
+  without sending BYE to the gateway, and left its FFmpeg processes running.
+  It now installs its handlers after loading the listener and ends the call
+  with BYE within a few seconds; the Speex sender also has a time limit as a
+  safety net. Calls left open by the gateway probably explain why frequent
+  on-demand calls stopped delivering video for minutes.
 - After a listener restart the API reported no last ring until the next call,
   so Home Assistant showed *unknown* for the last ring and visitor. The
   listener now restores the last ring time from the newest snapshot file name

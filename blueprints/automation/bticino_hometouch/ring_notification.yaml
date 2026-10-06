@@ -73,6 +73,23 @@ blueprint:
           default: Hanno suonato
           selector:
             text: {}
+        sound:
+          name: Notification sound
+          description: >
+            iOS sound name, for example "default". The notification is
+            time-sensitive: it sounds unless Do Not Disturb or Sleep silences it.
+          default: default
+          selector:
+            text: {}
+        tap_url:
+          name: Page opened by tapping the notification
+          description: >
+            Home Assistant path, for example a dashboard view with the camera
+            ("/videocitofono-live/live"). The iOS app opens only paths, not
+            entity dialogs.
+          default: /lovelace
+          selector:
+            text: {}
 
 mode: single
 max_exceeded: silent
@@ -84,7 +101,10 @@ variables:
   notify_devices: !input notify_devices
   title: !input title
   message: !input message
-  prefix: "BTICINO_{{ context.id }}"
+  sound: !input sound
+  tap_url: !input tap_url
+  # Unique per run: ties the notification buttons to this ring.
+  prefix: "BTICINO_{{ now().timestamp() | int }}"
 
 triggers:
   - trigger: event.received
@@ -125,8 +145,11 @@ actions:
             data:
               tag: "{{ prefix }}"
               image: "/api/camera_proxy/{{ camera }}"
+              # Holding the notification shows the live camera; tapping opens tap_url.
               entity_id: "{{ camera }}"
+              url: "{{ tap_url }}"
               push:
+                sound: "{{ sound }}"
                 interruption-level: time-sensitive
               actions: >
                 {% set ns = namespace(items=[]) %}

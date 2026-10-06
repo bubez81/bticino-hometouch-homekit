@@ -23,7 +23,9 @@ forwards live video to Homebridge on the local loopback interface.
 > incoming-call audio and contextual opening. Hardware validation is incomplete;
 > see the [October update](docs/update-2026-10.md) before enabling these features.
 > Since 2026-10-05 the dedicated plugin publishes the doorbell as a standalone
-> HomeKit Video Doorbell; see the [changelog](CHANGELOG.md#2026-10-05).
+> HomeKit Video Doorbell; since 2026-10-06 live views and answered rings carry
+> real two-way audio (Speex towards the gateway); see the
+> [changelog](CHANGELOG.md#2026-10-06).
 
 See the [changelog](CHANGELOG.md), [Home Assistant integration](docs/home-assistant.md), [plugin architecture](docs/plugin-architecture.md)
 and [current validation status](homebridge-bticino-hometouch/LIVE-VALIDATION.md).
@@ -49,7 +51,8 @@ optional and do not include rewards or support services.
 | Continuous last-snapshot fallback after the incoming call ends | Implemented; broader HomeKit testing required |
 | Privacy-preserving multi-entrance classification | Implemented experimentally; requires local calibration |
 | On-demand video in the dedicated plugin | Experimental; source lifetime/reliability require further testing |
-| Incoming two-way audio | Implemented; full physical conversation test pending |
+| Incoming two-way audio (answer a ring from Apple Home and talk) | Verified on one HOMETOUCH installation (Speex; needs an FFmpeg with `libspeex`) |
+| Entrance-panel sound in on-demand live views | Verified in Apple Home and Home Assistant on one installation |
 | Contextual opening and separate HomeKit lock | Implemented, opt-in; correct physical entrance requires verification |
 | Opening configured entrances on demand (`open_entrance`) | Verified on one HOMETOUCH installation (opt-in) |
 | Authenticated network API with event stream | Implemented, opt-in |
@@ -69,7 +72,7 @@ The listener does all SIP and media work; pick one or both front ends.
 | Ring notification | Apple Home, with snapshot (`standalone: true`) | Companion App via blueprint, with snapshot |
 | Opening | MQTT bridge + mqttthing locks, offered next to the doorbell | one button per entrance; the blueprint offers the entrance that rang |
 | Live video | yes (experimental) | yes, through go2rtc (experimental) |
-| Two-way audio | yes (experimental) | planned |
+| Two-way audio | yes: answering a ring and on-demand live view | live sound yes; talking experimental (go2rtc backchannel, WebRTC Camera card) |
 
 Steps in short:
 
@@ -412,9 +415,9 @@ Homebridge -- HomeKit Secure RTP --> Apple Home
   installations before using it by default for entrance-specific HomeKit events
 - Add on-demand video activation
 - Validate the continuous latest-snapshot fallback across additional HomeKit clients
-- Add receive-only audio, followed by carefully tested two-way audio
+- Verify talking from the on-demand live view at the door
 - Associate the correct opening control with each entrance where HomeKit allows
-- Home Assistant two-way audio through the go2rtc backchannel
+- Home Assistant: answer a ring and talk (go2rtc backchannel), verified at the door
 
 ## Disclaimer
 

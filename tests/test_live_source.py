@@ -131,6 +131,7 @@ class LiveSourceTests(unittest.TestCase):
         self.assertEqual(source.start(), 'on_demand')
         start = self.requests[1]
         self.assertEqual((start['video_port'], start['session_id']), (40001, source.session))
+        self.assertIs(start['audio'], True)
         self.assertEqual(len(self.guards), 1)
         calls = iter([True, False])
         source.relay(lambda: next(calls))
@@ -201,7 +202,8 @@ class LiveSourceTests(unittest.TestCase):
         command = ffmpeg_command('ffmpeg', 'rtsp://127.0.0.1:8554/x')
         self.assertEqual(command[command.index('-i') + 1], 'pipe:0')
         self.assertEqual(command[-5:], ['-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://127.0.0.1:8554/x'])
-        self.assertIn('-an', command)
+        self.assertEqual(command[command.index('-map'):command.index('-f', command.index('-map'))],
+                         ['-map', '0:v:0', '-map', '0:a?', '-c', 'copy'])
 
 
 class WatchdogTests(unittest.TestCase):

@@ -1,6 +1,19 @@
 # Live validation
 
-## Current status — 2026-10-05
+## Current status — 2026-10-06
+
+Real audio replaced the synthetic silence. The gateway exchanges audio only in
+Speex and sends the panel's sound only while it receives client audio; every
+call now sends silence, or the iPhone microphone while Home's talk button is
+on. Verified with a real ring: Apple Home notification, live video of the
+call, the panel's sound, and speech heard at the door. Fixed on the way: RTP
+SSRCs above 2^31-1 made FFmpeg fail about half of the sessions, answered calls
+were cut 35 seconds after the ring, and calls killed without BYE kept the
+panel busy (486). The panel ends audio calls after about 60 seconds. Talking
+from the on-demand live view is implemented but not yet verified at the door.
+See the [changelog](../CHANGELOG.md#2026-10-06).
+
+## Status — 2026-10-05
 
 With `standalone: true` the doorbell is advertised as a Video Doorbell
 (category 18). Simulated rings produced iPhone/iPad notifications with a scaled
