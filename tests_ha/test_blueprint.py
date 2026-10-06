@@ -56,7 +56,8 @@ async def test_ring_blueprint_runs_notifies_and_opens(hass):
                   "entrance_sensor": "sensor.videocitofono_ingresso_ultima_suonata",
                   "camera": "camera.videocitofono_telecamera",
                   "open_buttons": ["button.videocitofono_apri_scala", "button.videocitofono_apri_esterno"],
-                  "notify_devices": [device.id], "entrance_wait": 5}}})
+                  "notify_devices": [device.id], "entrance_wait": 5,
+                  "tap_url": "/videocitofono-live/live"}}})
     config = inputs.async_substitute()
     config.pop("use_blueprint", None)
     assert await async_setup_component(hass, "automation", {"automation": [config]})
@@ -75,7 +76,7 @@ async def test_ring_blueprint_runs_notifies_and_opens(hass):
     data = notifications[0].data["data"]
     assert data["tag"].startswith("BTICINO_")
     assert data["push"] == {"sound": "default", "interruption-level": "time-sensitive"}
-    assert data["url"] == "entityId:camera.videocitofono_telecamera"
+    assert data["url"] == "/videocitofono-live/live"
     assert [a["title"] for a in data["actions"]] == ["Apri scala"]
     hass.bus.async_fire("mobile_app_notification_action", {"action": data["actions"][0]["action"]})
     await hass.async_block_till_done()
