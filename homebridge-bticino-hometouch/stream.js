@@ -6,6 +6,7 @@ const {spawn} = require('node:child_process');
 const ipc = require('./ipc');
 const {IncomingCall}=require('./incoming-call');
 const {LiveAudio,TALK_PORT}=require('./live-audio');
+const {randomSsrc}=require('./two-way-audio');
 class StreamManager {
   constructor(socketPath, log, config = {}) {
     Object.assign(this, {socketPath, log, config});
@@ -17,7 +18,7 @@ class StreamManager {
     if (this.sessions.size) throw Error('Camera busy');
     const socket = dgram.createSocket(net.isIP(req.targetAddress) === 6 ? 'udp6' : 'udp4');
     const audioSocket = dgram.createSocket(net.isIP(req.targetAddress) === 6 ? 'udp6' : 'udp4');
-    const s = {id:req.sessionID, req, socket, audioSocket, audioSsrc:crypto.randomBytes(4).readUInt32BE(), ssrc:crypto.randomBytes(4).readUInt32BE(), state:'preparing'};
+    const s = {id:req.sessionID, req, socket, audioSocket, audioSsrc:randomSsrc(), ssrc:randomSsrc(), state:'preparing'};
     this.sessions.set(s.id, s);
     try {
       await new Promise((resolve,reject) => {socket.once('error',reject); socket.bind(0,resolve);});
@@ -29,7 +30,8 @@ class StreamManager {
       await new Promise((resolve,reject) => {s.rtcpForwarder.once('error',reject);s.rtcpForwarder.bind(s.forwarder.address().port + 1,'127.0.0.1',resolve);});
       s.forwarder.on('error', () => this.stop(s.id).catch(()=>{}));
       const forwardPacket = (packet, peer) => {
-        if (peer.address !== '127.0.0.1' || packet.length < 8) return;
+        // The encoder may still flush packets while the session closes its sockets.
+        if (s.state === 'stopping' || peer.address !== '127.0.0.1' || packet.length < 8) return;
         const rtcp = packet[1] >= 192 && packet[1] <= 223;
         if (!rtcp && packet.length < 12) return;
         if (rtcp) s.encoderRtcpPort = peer.port;
@@ -72,7 +74,7 @@ class StreamManager {
             if (this.talkEnabled === true) s.liveAudio.receiveTalk(packet);
             return;
           }
-          if (peer.address !== '127.0.0.1') return;
+          if (peer.address !== '127.0.0.1' || s.state === 'stopping') return;
           audioSocket.send(packet, req.audio.port, req.targetAddress, error => {
             if (error) this.log.error(`HomeKit audio UDP: ${error.code}`);
           });

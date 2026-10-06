@@ -14,6 +14,9 @@ const {spawn}=require('node:child_process');
 const {sdp}=require('./two-way-audio');
 
 const TALK_PORT=22310;
+function redact(text) {
+  return text.replace(/inline:\S+/g,'inline:[redacted]').replace(/[A-Za-z0-9+/]{24,}={0,2}/g,'[redacted]');
+}
 
 async function freePort(pair=false) {
   for(let attempt=0;attempt<20;attempt++){
@@ -61,8 +64,15 @@ class LiveAudio {
   }
   spawn(name,args) {
     const child=spawn(this.ffmpeg,args,{stdio:['ignore','ignore','pipe']});
-    // Raw FFmpeg output may contain SDES keys: report only that something happened.
-    child.stderr.on('data',()=>{if(!this.reported?.[name]){this.reported={...this.reported,[name]:true};this.log?.warn?.(`BTicino live audio ${name}: encoder diagnostic received`);}});
+    // Log the first FFmpeg messages with anything key-like removed.
+    let lines=0;
+    child.stderr.on('data',data=>{
+      for(const line of data.toString().split('\n')){
+        if(!line.trim()||lines>=5)continue;
+        lines++;
+        this.log?.warn?.(`BTicino live audio ${name}: ${redact(line).slice(0,300)}`);
+      }
+    });
     child.on('exit',(code,signal)=>{if(!this.stopping)this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}`);});
     this.processes.push(child);
   }
@@ -88,4 +98,4 @@ class LiveAudio {
     return this.stopPromise;
   }
 }
-module.exports={LiveAudio,TALK_PORT};
+module.exports={LiveAudio,TALK_PORT,redact};

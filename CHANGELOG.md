@@ -71,6 +71,12 @@ release or npm publication is implied.
 
 ### Fixed
 
+- Homebridge plugin: random RTP SSRCs above 2^31-1 made FFmpeg refuse the
+  stream ("Error setting option ssrc … Result too large"), so about half of
+  the Apple Home live views lost their audio after a few seconds, and the same
+  could stop the video encoder. SSRCs are now chosen in FFmpeg's range. The
+  plugin also no longer logs `Error: Not running` when the encoder flushes
+  packets while a session closes.
 - Closing a camera call (`stop_call`, end of a live view) did not work: the
   probe imported the listener module, whose import-time SIGTERM handler replaced
   the probe's own. The probe ignored the stop request, was killed after 8 s

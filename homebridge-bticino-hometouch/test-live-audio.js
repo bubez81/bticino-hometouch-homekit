@@ -10,6 +10,7 @@ const path=require('node:path');
 const {spawn}=require('node:child_process');
 const {sdp}=require('./two-way-audio');
 const {LiveAudio}=require('./live-audio');
+const {randomSsrc}=require('./two-way-audio');
 const ffmpeg=process.env.BTICINO_TEST_FFMPEG||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg';
 const processes=[];
 function run(args){const child=spawn(ffmpeg,args,{stdio:['ignore','pipe','pipe']});processes.push(child);return child;}
@@ -22,7 +23,9 @@ function frequency(samples,rate){let n=0;for(let i=1;i<samples.length;i++)if(sam
   const homekitPort=await freePair();
   const talkSocket=await bound();
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'bticino-live-audio-test-'));
-  const audio=new LiveAudio({ffmpeg,log:console,key,salt,pt:110,ssrc:4242,packetTime:20,homekitPort,talkPort:talkSocket.address().port});
+  for(let i=0;i<10000;i++){const v=randomSsrc();assert(Number.isInteger(v)&&v>=1&&v<=0x7fffffff);}
+  // Largest SSRC FFmpeg accepts: a larger random value used to break about half the sessions.
+  const audio=new LiveAudio({ffmpeg,log:console,key,salt,pt:110,ssrc:0x7fffffff,packetTime:20,homekitPort,talkPort:talkSocket.address().port});
   let timeout;
   try{
     // HomeKit side: decode what the plugin sends.

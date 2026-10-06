@@ -5,7 +5,7 @@ const os=require('node:os');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const ipc=require('./ipc');
-const {TwoWayAudio}=require('./two-way-audio');
+const {TwoWayAudio,randomSsrc}=require('./two-way-audio');
 
 async function pair() {
   for(let attempt=0;attempt<20;attempt++) {
@@ -57,7 +57,7 @@ class IncomingCall {
         homeInput:{...homeBase,port:home.port,pt:req.audio.pt},
         doorInput:{...doorBase,...material(result.audio.material),port:door.port},
         homeOutput:{...homeBase,port:out.port,pt:req.audio.pt,ssrc:s.audioSsrc},
-        doorOutput:{...doorBase,...material(result.audio.return_material),port:result.audio.return_port,ssrc:crypto.randomBytes(4).readUInt32BE()||1},
+        doorOutput:{...doorBase,...material(result.audio.return_material),port:result.audio.return_port,ssrc:randomSsrc()},
       });
       this.ready=true;
     }catch(error){await this.close();throw error;}

@@ -6,6 +6,11 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
 
+// FFmpeg's RTP muxer takes -ssrc as a signed 32-bit option: values above
+// 2^31-1 make it fail ("Result too large"), so stay in 1..2^31-1.
+function randomSsrc() {
+  return (require('node:crypto').randomBytes(4).readUInt32BE() & 0x7fffffff) || 1;
+}
 const CODECS = {
   OPUS: {encoder:'libopus',clock:48000,rates:[16000,24000,48000]},
   PCMU: {encoder:'pcm_mulaw',clock:8000,rates:[8000]},
@@ -75,4 +80,4 @@ class TwoWayAudio {
     return this.stopPromise;
   }
 }
-module.exports={TwoWayAudio,sdp,validate};
+module.exports={TwoWayAudio,sdp,validate,randomSsrc};
