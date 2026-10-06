@@ -25,6 +25,10 @@ class FrameDecoder:
         self.sdp = self.directory / 'input.sdp'
         self.frame = self.directory / 'frame.jpg'
         self.stream_port = int(os.environ.get('BTICINO_LIVE_VIDEO_PORT', '22300'))
+        # Optional raw PCM copy of the panel audio for players that need their own
+        # audio pipeline (the Homebridge plugin re-encodes it for HomeKit).
+        audio_port = os.environ.get('BTICINO_LIVE_AUDIO_PORT', '')
+        self.audio_port = int(audio_port) if audio_port.isdigit() and 1024 <= int(audio_port) <= 65535 else None
         self.process = None
         self.sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # Find a free loopback pair outside the production receiver's range.
@@ -66,6 +70,9 @@ class FrameDecoder:
                             f'udp://127.0.0.1:{self.stream_port}?pkt_size=1316']
             else:
                 command += ['-an']
+            if stream and audio and self.audio_port:
+                command += ['-map', '0:a:0', '-vn', '-c:a', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+                            '-f', 's16le', f'udp://127.0.0.1:{self.audio_port}?pkt_size=640']
             command += ['-map', '0:v:0', '-vf', 'select=gte(n\\,10)',
                         '-frames:v', '1', '-q:v', '2', '-y', str(self.frame)]
             # FFmpeg errors go to the probe's stderr (the camera call log); the key is

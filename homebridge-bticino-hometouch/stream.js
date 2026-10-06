@@ -5,6 +5,7 @@ const net = require('node:net');
 const {spawn} = require('node:child_process');
 const ipc = require('./ipc');
 const {IncomingCall}=require('./incoming-call');
+const {LiveAudio,TALK_PORT}=require('./live-audio');
 class StreamManager {
   constructor(socketPath, log, config = {}) {
     Object.assign(this, {socketPath, log, config});
@@ -66,6 +67,11 @@ class StreamManager {
         audioSocket.on('error', () => this.stop(s.id).catch(()=>{}));
         audioSocket.on('message', (packet, peer) => {
           if(s.incoming){s.incoming.receive(packet,peer);return;}
+          if (s.liveAudio && peer.address === req.targetAddress && peer.port === req.audio.port) {
+            // iPhone microphone: passed to the door only while Home's speaker is unmuted.
+            if (this.talkEnabled === true) s.liveAudio.receiveTalk(packet);
+            return;
+          }
           if (peer.address !== '127.0.0.1') return;
           audioSocket.send(packet, req.audio.port, req.targetAddress, error => {
             if (error) this.log.error(`HomeKit audio UDP: ${error.code}`);
@@ -114,7 +120,18 @@ class StreamManager {
         args.splice(start,end-start,'-protocol_whitelist','file,udp,rtp,srtp,crypto','-probesize','32768','-analyzeduration','0','-i',s.incoming.videoPath);
       }
       const combinedAudio = !s.incoming && process.env.BTICINO_SYNC_AUDIO === '1' && req.audio && s.req.audio?.srtp_key && s.req.audio?.srtp_salt;
-      if (!s.incoming && !combinedAudio && s.audioSocket && s.req.audio?.srtp_key && s.req.audio?.srtp_salt) {
+      const diagnostic = !s.incoming && process.env.BTICINO_TEST_PATTERN === '1';
+      if (!s.incoming && !diagnostic && !combinedAudio && this.config.liveAudio !== false && req.audio &&
+          s.audioSocket && s.req.audio?.srtp_key && s.req.audio?.srtp_salt) {
+        // The gateway sends the panel's audio only on a Speex call that also
+        // receives client audio; the camera call handles both, this relays them.
+        s.liveAudio = new LiveAudio({ffmpeg:this.config.audioFfmpegPath||this.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg',
+          log:this.log, key:s.req.audio.srtp_key, salt:s.req.audio.srtp_salt, pt:req.audio.pt, ssrc:s.audioSsrc,
+          packetTime:req.audio.packet_time, homekitPort:s.audioSocket.address().port, talkPort:this.config.talkPort||TALK_PORT});
+        await s.liveAudio.start();
+        this.log.info('HomeKit live audio: entrance panel sound, microphone when Home unmutes');
+      }
+      if (!s.incoming && !combinedAudio && !s.liveAudio && s.audioSocket && s.req.audio?.srtp_key && s.req.audio?.srtp_salt) {
         s.audioProcess = spawn(this.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg', ['-hide_banner','-loglevel','error','-nostdin','-re','-f','lavfi','-i','anullsrc=r=24000:cl=mono','-c:a','libopus','-ar','24000','-ac','1','-b:a','24k','-application','lowdelay','-payload_type',String(req.audio.pt),'-ssrc',String(s.audioSsrc),'-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80','-srtp_out_params',Buffer.concat([s.req.audio.srtp_key,s.req.audio.srtp_salt]).toString('base64'),`srtp://127.0.0.1:${s.audioSocket.address().port}?rtcpport=${s.audioSocket.address().port}`],{stdio:'ignore'});
         s.audioProcess.on('error', error => this.log.error(`HomeKit audio encoder: ${error.message}`));
         this.log.info('HomeKit diagnostic audio: silence only, not doorbell microphone');
@@ -124,7 +141,6 @@ class StreamManager {
         args[args.length - 1] = `srtp://${host}:${s.req.video.port}?rtcpport=${s.req.video.port}&pkt_size=${Math.min(v.mtu, 1200)}`;
         this.log.info('HomeKit diagnostic: direct SRTP video transport');
       }
-      const diagnostic = !s.incoming && process.env.BTICINO_TEST_PATTERN === '1';
       if (diagnostic) {
         const start = args.indexOf('-probesize');
         const end = args.indexOf('-an');
@@ -161,7 +177,8 @@ class StreamManager {
       });
       await new Promise((resolve,reject)=>{s.process.once('spawn',resolve);s.process.once('error',reject);});
       s.process.once('exit',(code,signal)=>{this.log.info(`HomeKit encoder closed code=${code} signal=${signal} frames=${s.frames||0}`);this.stop(s.id).catch(()=>{});});
-      if (!diagnostic && !s.incoming) s.pending=ipc.request(this.socketPath,'start_call',{candidate:this.config.candidate||'1',session_id:s.id,video_port:port},5000);
+      if (!diagnostic && !s.incoming) s.pending=ipc.request(this.socketPath,'start_call',{candidate:this.config.candidate||'1',session_id:s.id,video_port:port,
+        ...(s.liveAudio ? {audio:true,audio_port:s.liveAudio.panelPort} : {})},5000);
       const result=diagnostic || s.incoming ? {ok:true} : await s.pending;
       if (!result.ok) throw Error(result.error||'SIP start failed');
       if(s.state==='stopping')return;
@@ -187,7 +204,8 @@ class StreamManager {
               return;
             }
             this.log.info('HomeKit source ended: reopening SIP while preserving video session');
-            s.pending = ipc.request(this.socketPath, 'start_call', {candidate:this.config.candidate||'1',session_id:s.id,video_port:port},5000);
+            s.pending = ipc.request(this.socketPath, 'start_call', {candidate:this.config.candidate||'1',session_id:s.id,video_port:port,
+        ...(s.liveAudio ? {audio:true,audio_port:s.liveAudio.panelPort} : {})},5000);
             const renewed = await s.pending;
             if (!renewed.ok) throw Error(renewed.error || 'SIP source renewal failed');
           } catch (error) {
@@ -230,6 +248,7 @@ class StreamManager {
     try{s.socket.close();}catch(_){}
     try{s.audioSocket?.close();}catch(_){}
     try{s.audioProcess?.kill('SIGTERM');}catch(_){}
+    try{await s.liveAudio?.stop();}catch(_){}
     try{s.forwarder?.close();}catch(_){}
     try{s.rtcpForwarder?.close();}catch(_){}
     try{if(s.pending){await s.pending.catch(()=>{});await ipc.request(this.socketPath,'stop_call',{session_id:id},12000);}}

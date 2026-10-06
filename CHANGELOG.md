@@ -8,6 +8,22 @@ release or npm publication is implied.
 
 ### Added
 
+- Real audio in the Apple Home live view (Homebridge plugin, `liveAudio`,
+  default on with `enableTwoWayAudio`). Until now the on-demand live view sent
+  HomeKit synthetic silence (logged as `HomeKit diagnostic audio: silence
+  only`), because the camera call had audio disabled. The plugin now asks for
+  an audio call (`start_call` with `audio` and `audio_port`), re-encodes the
+  entrance panel's sound for HomeKit, and, while Home unmutes the microphone,
+  sends the iPhone's voice to the call's talk port. `test-live-audio.js`
+  checks both directions with real encoders. Not yet verified on the physical
+  doorbell.
+- Speaking from Home Assistant: a go2rtc backchannel source
+  (`src/bticino_talk_relay.py`) forwards the viewer's microphone to the camera
+  call, which sends it to the door instead of silence. On the test
+  installation the browser microphone reached the call; playback at the door
+  is not yet verified. go2rtc's RTSP server does not relay the backchannel, so
+  the browser must use the listener host's go2rtc (WebRTC Camera card).
+
 - Entrance-panel audio in the Home Assistant live stream. With the new
   `--audio` option the camera probe offers Speex 8 kHz send/receive, as the
   official app does, sends encrypted Speex silence (the gateway transmits the

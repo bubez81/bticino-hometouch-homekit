@@ -85,6 +85,12 @@ def handle_request(request: dict) -> dict:
             if not isinstance(owner, str) or not owner or not isinstance(port, int) or not 1024 <= port <= 65535:
                 return {"ok": False, "error": "invalid_stream_session"}
             environment = dict(os.environ, BTICINO_LIVE_VIDEO_PORT=str(port))
+            environment.pop("BTICINO_LIVE_AUDIO_PORT", None)
+            audio_port = request.get('audio_port')
+            if audio_port is not None:
+                if request.get('audio') is not True or not isinstance(audio_port, int) or not 1024 <= audio_port <= 65535:
+                    return {"ok": False, "error": "invalid_audio_port"}
+                environment["BTICINO_LIVE_AUDIO_PORT"] = str(audio_port)
             command = [
                 sys.executable, CAMERA_PROBE, "--candidates", CAMERA_CANDIDATES,
                 "--candidate", candidate, "--prime-udp", "--stream", "--duration", "300",
