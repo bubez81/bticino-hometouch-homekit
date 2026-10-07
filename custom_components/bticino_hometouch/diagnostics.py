@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 
 from . import HometouchConfigEntry
 from .const import CONF_ENTRANCES, CONF_STORAGE
+from .live import last_call_lines
 
 
 def _password_shape(value: str) -> str:
@@ -73,6 +74,16 @@ def describe_phone(storage: Path) -> dict[str, Any]:
     return result
 
 
+CALL_MARKERS = ("=== ", "SIP_STATUS=", "SIP_CHALLENGE ", "VIDEO_SDP ", "AUDIO_ACCEPTED=", "MEDIA_PROGRESS ",
+                "PROBE ", "SIP_CONNECTION_LOST", "SIP_RECONNECTED")
+
+
+def last_camera_call(storage: Path) -> list[str]:
+    """Summary lines of the latest camera call (status codes and packet counts, no keys)."""
+    lines = last_call_lines(storage / "camera-calls.log", 60)
+    return [line for line in lines if line.startswith(CALL_MARKERS) or " MEDIA_PROGRESS " in line or " PROBE " in line]
+
+
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: HometouchConfigEntry) -> dict[str, Any]:
     data: dict[str, Any] = {
         "mode": "standalone" if entry.data.get(CONF_STORAGE) else "external listener",
@@ -80,4 +91,5 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Hometou
     }
     if entry.data.get(CONF_STORAGE):
         data["phone"] = await hass.async_add_executor_job(describe_phone, Path(entry.data[CONF_STORAGE]))
+        data["last_camera_call"] = await hass.async_add_executor_job(last_camera_call, Path(entry.data[CONF_STORAGE]))
     return data
