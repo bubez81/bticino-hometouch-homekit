@@ -166,6 +166,7 @@ def audio_answer(raw):
 
 
 TALK_PORT = 22310
+KEYFRAME_REQUESTS = 3
 ALAW_SILENCE = 0xD5
 TALK_MAX_BACKLOG = 4000  # 0.5 s of 8 kHz A-law: older talk audio is dropped
 
@@ -431,6 +432,8 @@ def main():
     p.add_argument('--decode-frame', action='store_true', help='decifra e salva un fotogramma privato')
     p.add_argument('--stream', action='store_true', help='inoltra il video decifrato a MPEG-TS localhost:22300')
     p.add_argument('--rtcp-feedback', action='store_true', help='invia feedback SRTCP autenticato durante il video')
+    p.add_argument('--no-keyframe-request', dest='keyframe_request', action='store_false',
+                   help="non chiedere un fotogramma completo all'avvio del video")
     p.add_argument('--audio', action='store_true',
                    help='riceve anche l\'audio del posto esterno (offre Speex e invia silenzio)')
     p.add_argument('--audio-ffmpeg', help='FFmpeg con libspeex e SRTP; default audio_ffmpeg in config')
@@ -600,6 +603,8 @@ def main():
                 remote_ended = False
                 feedback_index = 0
                 next_feedback = 0
+                keyframe_requests = 0
+                next_keyframe_request = 0
                 destinations = media_destinations(raw)
                 while time.monotonic() < finish and not stopping:
                     try:
@@ -608,6 +613,17 @@ def main():
                             packets += 1
                             if decoder:
                                 decoder.feed(data)
+                            # Ask for a keyframe as soon as video arrives (and twice more,
+                            # one second apart): decoding starts at once instead of at
+                            # the camera's next periodic keyframe, as on incoming calls.
+                            if (args.keyframe_request and keyframe_requests < KEYFRAME_REQUESTS
+                                    and time.monotonic() >= next_keyframe_request):
+                                rtcp.sendto(lib.make_srtcp_pli(local_material, feedback_ssrc,
+                                    int.from_bytes(data[8:12], 'big'), feedback_index), destinations[1])
+                                feedback_index += 1
+                                keyframe_requests += 1
+                                next_keyframe_request = time.monotonic()+1
+                                print(f'KEYFRAME_REQUEST sent={keyframe_requests}', flush=True)
                             if args.rtcp_feedback and time.monotonic() >= next_feedback:
                                 feedback = lib.make_srtcp_pli(local_material, feedback_ssrc,
                                     int.from_bytes(data[8:12], 'big'), feedback_index)

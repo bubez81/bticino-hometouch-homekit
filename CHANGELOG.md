@@ -42,6 +42,14 @@ Home Assistant integration is installed from this repository through HACS.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Changed (camera calls)
+
+- On-demand camera calls ask the camera for a keyframe (SRTCP PLI) as soon as
+  video arrives, three times one second apart, as incoming calls already do.
+  Observed before: an Apple Home live view sent its first video 5.8 s after
+  the request (camera answered after about 2.5 s), while during a ring, with
+  the keyframe request, it took 1.4–2 s. `--no-keyframe-request` turns it off.
+
 ### Added (Home Assistant diagnostics)
 
 - *Download diagnostics* includes the latest camera call's summary: SIP
