@@ -1,9 +1,11 @@
 import importlib.util
 import json
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 LISTENER = Path(__file__).parents[1] / "src" / "bticino_hometouch_listener.py"
 SPEC = importlib.util.spec_from_file_location("bticino_auth_username", LISTENER)
 MODULE = importlib.util.module_from_spec(SPEC)

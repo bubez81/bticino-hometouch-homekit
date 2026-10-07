@@ -3,6 +3,7 @@
 import atexit
 import hashlib
 import hmac
+import ipaddress
 import base64
 import json
 import os
@@ -90,6 +91,49 @@ CA_FILE = Path(CONFIG.get("ca_file", "/opt/bticino-gateway/certs/ca-chain.cert.p
 SERVER_IP = CONFIG.get("sip_server") or os.environ.get("BTICINO_SIP_SERVER", "")
 SERVER_PORT = int(CONFIG.get("sip_port", 5061))
 DOMAIN = CONFIG.get("sip_domain") or os.environ.get("BTICINO_SIP_DOMAIN", "")
+
+# The gateway at home answers camera calls directly; the cloud SIP server
+# challenges them for a password the endpoint cannot provide. When only the
+# cloud server is configured, the gateway's local address is learnt from a
+# ring (and verified by its certificate) and used from then on, also by the
+# camera probe, which imports this module.
+GATEWAY_FILE = RUNTIME_DIR / "gateway-address.json"
+GATEWAY_DISCOVERY = bool(CONFIG.get("gateway_discovery", True))
+
+
+def is_cloud_server(address):
+    return str(address).lower().endswith(".iotleg.com")
+
+
+def is_private_ipv4(value):
+    try:
+        address = ipaddress.ip_address(str(value))
+    except ValueError:
+        return False
+    # Home networks only (RFC 1918): Python also counts documentation and
+    # other reserved ranges as private.
+    return address.version == 4 and any(address in ipaddress.ip_network(net)
+                                        for net in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def discovered_gateway():
+    try:
+        value = json.loads(GATEWAY_FILE.read_text()).get("address")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return value if is_private_ipv4(value) else None
+
+
+def atomic_write_text(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as handle:
+        handle.write(text)
+    os.replace(temporary, path)
+
+
+if GATEWAY_DISCOVERY and is_cloud_server(SERVER_IP):
+    SERVER_IP = discovered_gateway() or SERVER_IP
 
 REGISTER_EXPIRES = 600
 REFRESH_MARGIN = 90
@@ -671,6 +715,20 @@ def load_auth_username(default):
     except (OSError, ValueError, AttributeError):
         value = None
     return value.strip() if isinstance(value, str) and value.strip() else default
+
+
+def verify_gateway(address, timeout=3.0):
+    """True when address:SERVER_PORT is this plant's gateway: its certificate
+    is signed by the BTicino CA and names the plant's SIP domain."""
+    try:
+        with socket.create_connection((address, SERVER_PORT), timeout=timeout) as raw:
+            with make_tls_context().wrap_socket(raw) as tls:
+                certificate = tls.getpeercert() or {}
+    except (OSError, ssl.SSLError, ValueError):
+        return False
+    names = [value for field in certificate.get("subject", ()) for key, value in field if key == "commonName"]
+    names += [value for kind, value in certificate.get("subjectAltName", ()) if kind in ("DNS", "URI")]
+    return bool(DOMAIN) and any(DOMAIN in name for name in names)
 
 
 def make_tls_context():
@@ -1357,6 +1415,26 @@ class HomtouchListener:
         return {'ok': False, 'error': 'session_mismatch'}
 
 
+    def learn_gateway(self, raw, media_ip):
+        """From a ring received through the cloud: the gateway's local address."""
+        if not GATEWAY_DISCOVERY or not is_cloud_server(SERVER_IP):
+            return
+        text = raw.decode("utf-8", "replace")
+        candidates = [media_ip] + re.findall(r"^Contact:.*?@([0-9.]+)", text, re.I | re.M)
+        candidates = list(dict.fromkeys(c for c in candidates if is_private_ipv4(c)))
+        if candidates:
+            threading.Thread(target=self._verify_gateway, args=(candidates,), daemon=True).start()
+
+    def _verify_gateway(self, candidates):
+        global SERVER_IP
+        for address in candidates:
+            if verify_gateway(address):
+                atomic_write_text(GATEWAY_FILE, json.dumps({"address": address, "seen": int(time.time())}) + "\n")
+                SERVER_IP = address
+                log(f"Gateway di casa trovato in rete locale: {address}; "
+                    "verrà usato dalla prossima connessione (serve per il live)")
+                return
+
     def connect(self):
         ctx = make_tls_context()
 
@@ -1707,6 +1785,7 @@ class HomtouchListener:
         )
         (payload, fmtp, crypto_tag, remote_key, media_order, audio,
          remote_ip, remote_rtcp_port) = self.parse_video_offer(raw)
+        self.learn_gateway(raw, remote_ip)
         # Negotiate a codec the audio bridge can actually decode, not simply
         # the first advertised codec (which may be unsupported G729).
         try:
@@ -2129,6 +2208,9 @@ def main():
     log(
         f"Server: {SERVER_IP}:{SERVER_PORT}"
     )
+    if is_cloud_server(SERVER_IP):
+        log("Collegato al server cloud: le chiamate alla telecamera (live) funzionano solo "
+            "con il gateway di casa, che verrà cercato alla prossima suonata")
     log(
         f"Domain: {DOMAIN}"
     )

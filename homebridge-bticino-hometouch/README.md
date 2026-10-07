@@ -87,6 +87,7 @@ with addresses, accounts and keys replaced by placeholders.
 | --- | --- |
 | "not set up yet" in the log | Complete step 2 |
 | Accessory without picture or live | Wait about 6 s; after many live views in a row the gateway needs 10–20 minutes of rest |
+| Live never starts on a new setup | Ring the doorbell once: the gateway at home is found at the first ring (log: `Gateway di casa trovato`); camera calls through the cloud server are refused |
 | Live view without sound | Check the `BTicino live audio` lines in the log (sound level of the panel) |
 | A gate does not open | Check its address with **Prova apertura** |
 | No notification | In Apple Home, accessory settings → doorbell notifications on |
