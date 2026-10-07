@@ -69,6 +69,14 @@ def apply_command(args):
     config_path = onboard.provision(client, email, plant, plant_id, gateway_id, provisioned, private,
                                     args.openssl, DEVICE_NAME, log=log)
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    # Paths relative to the data folder: the plugin resolves them, so the
+    # folder can be moved without editing them.
+    for key, value in list(config.items()):
+        if key.endswith("_file") and isinstance(value, str) and Path(value).is_absolute():
+            try:
+                config[key] = str(Path(value).resolve().relative_to(storage))
+            except ValueError:
+                pass
     onboard.atomic_private_json(storage / "onboarding.json", config)
     configuration = client.plant_configuration(plant_id, gateway_id)
     candidates = onboard.camera_candidates(configuration)

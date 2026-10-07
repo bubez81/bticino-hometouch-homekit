@@ -160,6 +160,23 @@ class IPCServer(socketserver.UnixStreamServer):
     allow_reuse_address = True
 
 
+def remove_stale_socket(path) -> None:
+    """Remove a socket left by a listener that died; refuse if one still answers."""
+    path = Path(path)
+    if not path.exists() and not path.is_symlink():
+        return
+    probe = socket.socket(socket.AF_UNIX)
+    probe.settimeout(1)
+    try:
+        probe.connect(str(path))
+    except OSError:
+        path.unlink(missing_ok=True)
+        return
+    finally:
+        probe.close()
+    raise RuntimeError(f"Un altro listener risponde già su {path}")
+
+
 def serve_forever(path: Path = SOCKET_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)

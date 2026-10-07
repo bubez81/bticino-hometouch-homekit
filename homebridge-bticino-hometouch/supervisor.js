@@ -45,6 +45,13 @@ class ListenerSupervisor {
     const onboarding = path.join(this.storage, 'onboarding.json');
     if (!fs.existsSync(onboarding)) return null;
     const base = JSON.parse(fs.readFileSync(onboarding, 'utf8'));
+    // Private files are stored relative to the data folder, so the folder can
+    // be moved (another Homebridge instance, another user) without editing.
+    const resolve = file => (typeof file === 'string' && file && !path.isAbsolute(file) ? path.join(this.storage, file) : file);
+    for (const key of Object.keys(base)) if (key.endsWith('_file')) base[key] = resolve(base[key]);
+    const profiles = base.entrance_classification?.profiles;
+    if (profiles) for (const name of Object.keys(profiles)) profiles[name] = profiles[name].map(resolve);
+    if (base.api?.token_file) base.api.token_file = resolve(base.api.token_file);
     const entrances = Object.fromEntries((this.settings.entrances || []).map(e => [e.id, String(e.address)]));
     const config = {
       ...base,
@@ -66,13 +73,17 @@ class ListenerSupervisor {
       return false;
     }
     fs.mkdirSync(this.storage, {recursive: true, mode: 0o700});
-    const file = path.join(this.storage, 'listener.json');
-    writePrivateJson(file, config);
-    this.launch(file);
+    this.launch();
     return true;
   }
 
-  launch(file) {
+  // The listener's configuration is written again at every (re)start, so a
+  // corrected setup applies without restarting Homebridge.
+  launch() {
+    const config = this.listenerConfig();
+    if (!config) return;
+    const file = path.join(this.storage, 'listener.json');
+    writePrivateJson(file, config);
     const probe = probePath(this.directory);
     const env = {
       ...process.env,
@@ -105,7 +116,7 @@ class ListenerSupervisor {
       if (Date.now() - this.started > 120000) this.restarts = 0;
       const delay = RESTART_DELAYS[Math.min(this.restarts++, RESTART_DELAYS.length - 1)];
       this.log.warn(`BTicino HOMETOUCH listener ended (${code ?? signal}); restarting in ${delay} s`);
-      this.timer = this.setTimer(() => { if (!this.stopping) this.launch(file); }, delay * 1000);
+      this.timer = this.setTimer(() => { if (!this.stopping) this.launch(); }, delay * 1000);
     });
   }
 

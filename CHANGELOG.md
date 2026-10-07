@@ -41,6 +41,17 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (plugin 0.9.1)
+
+- A listener that stopped with an error left its IPC socket behind, and every
+  following start failed with "Address already in use" until the file was
+  removed by hand. The listener now removes a dead socket at start (and refuses
+  to start if another listener still answers) and deletes its own at exit.
+- The private files of the setup are stored relative to the data folder, and
+  the listener's configuration is written again at every restart. Moving the
+  data folder (for example from a separate Homebridge instance into the main
+  one) no longer leaves paths pointing to the old location.
+
 ### Validation
 
 - Python 151 tests (1 skipped) and the plugin's tests, including a platform

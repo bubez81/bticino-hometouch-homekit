@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import atexit
 import hashlib
 import hmac
 import base64
@@ -2087,7 +2088,11 @@ def main():
         import bticino_ipc
         IPC_MODULE = bticino_ipc
         bticino_ipc.SNAPSHOT_DIR = SNAPSHOT_DIR
+        # A listener that crashed leaves its socket behind; the next start would
+        # then fail with "Address already in use" forever.
+        bticino_ipc.remove_stale_socket(bticino_ipc.SOCKET_PATH)
         ipc_server = bticino_ipc.IPCServer(str(bticino_ipc.SOCKET_PATH), bticino_ipc._Handler)
+        atexit.register(lambda: bticino_ipc.SOCKET_PATH.unlink(missing_ok=True))
         os.chmod(bticino_ipc.SOCKET_PATH, 0o660)
         try:
             os.chown(bticino_ipc.SOCKET_PATH, os.getuid(), grp.getgrnam("staff").gr_gid)
