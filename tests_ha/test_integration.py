@@ -1,6 +1,6 @@
 import asyncio
 
-from homeassistant.config_entries import SOURCE_USER
+from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
@@ -31,7 +31,11 @@ async def test_config_flow_signs_in_and_sets_up_the_phone(hass, listener, tmp_pa
         return {"ok": True, "plant": "Casa", "entrances": [{"name": "Ingresso", "address": "20"}]}
 
     hass.config.config_dir = str(tmp_path)
+    # With http, the live view is set up too: its cleanup must not break unloading.
+    from homeassistant.setup import async_setup_component
+    assert await async_setup_component(hass, "http", {})
     runtime = AsyncMock()
+    runtime.socket = tmp_path / "hometouch.sock"
     with patch("custom_components.bticino_hometouch.config_flow.run_setup", run_setup), \
          patch("custom_components.bticino_hometouch.config_flow.prepare_api", return_value=(listener.port, TOKEN)), \
          patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
@@ -48,7 +52,11 @@ async def test_config_flow_signs_in_and_sets_up_the_phone(hass, listener, tmp_pa
         assert calls[1][0] == "apply" and "--plant-id" in calls[1][2] and "P1" in calls[1][2]
         await hass.async_block_till_done()
         assert hass.states.async_entity_ids("event"), "doorbell entity created"
-        await hass.config_entries.async_unload(done["result"].entry_id)
+        entry = done["result"]
+        assert hass.data[DOMAIN][entry.entry_id].socket_path == runtime.socket
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        assert entry.state is ConfigEntryState.NOT_LOADED
+        assert entry.entry_id not in hass.data[DOMAIN]
     runtime.stop.assert_awaited()
 
 
@@ -126,3 +134,19 @@ async def test_entities_events_and_opening(hass, listener):
     assert image.content == b"\xff\xd8640x360"
 
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_buttons_of_removed_entrances_are_cleaned_up(hass, listener):
+    from homeassistant.helpers import entity_registry as er
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "127.0.0.1", CONF_PORT: listener.port, CONF_TOKEN: TOKEN})
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create("button", DOMAIN, f"{entry.entry_id}_open_ingresso", config_entry=entry)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    buttons = lambda: sorted(e.unique_id for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+                             if e.domain == "button")
+    await wait_for(lambda: len(buttons()) == 2)
+    assert buttons() == [f"{entry.entry_id}_open_esterno", f"{entry.entry_id}_open_scala"]
+    assert registry.async_get(old.entity_id) is None
+    await hass.config_entries.async_unload(entry.entry_id)
