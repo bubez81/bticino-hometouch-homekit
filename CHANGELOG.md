@@ -41,6 +41,13 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (Home Assistant integration 0.2.0, diagnostics)
+
+- *Download diagnostics* describes the phone's private files without their
+  values: which files exist, the SIP password's length and character class,
+  whether the certificate's name matches the account and the key matches the
+  certificate, and its validity.
+
 ### Added (camera probe)
 
 - When a camera call is challenged for authentication (401/407), the call log
