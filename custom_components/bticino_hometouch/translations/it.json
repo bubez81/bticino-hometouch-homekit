@@ -26,6 +26,14 @@
         "data": {
           "token": "Token API"
         }
+      },
+      "reconfigure": {
+        "title": "Aggiorna credenziali",
+        "description": "Accedi di nuovo con l'account Door Entry dedicato per rileggere dal cloud le credenziali di questo telefono. Non viene creato nulla.{error}",
+        "data": {
+          "email": "E-mail",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -38,7 +46,9 @@
       "single_instance_allowed": "Già configurato",
       "already_configured": "Questo impianto è già configurato",
       "setup_failed": "Configurazione non riuscita: {error}",
-      "reauth_successful": "Token aggiornato"
+      "reauth_successful": "Token aggiornato",
+      "credentials_refreshed": "Credenziali aggiornate.",
+      "not_standalone": "Questa configurazione usa un listener esterno."
     }
   },
   "entity": {

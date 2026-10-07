@@ -149,6 +149,7 @@ class OnboardTests(unittest.TestCase):
                 records.append({
                     **self.created_requests[-1],
                     "SipPassword": "generated-test-password",
+                    "Username": "digest-user",
                 })
             return records
 
@@ -329,6 +330,7 @@ class OnboardTests(unittest.TestCase):
             )
             self.assertEqual(config["sip_domain"], "gateway-test.bs.iotleg.com")
             self.assertEqual(credentials["SipPassword"], "generated-test-password")
+            self.assertEqual(credentials["Username"], "digest-user")
             for name in (
                 "config.json", "sip_credentials.json", "selection.json",
                 "client.key", "client.cert.pem", "ca-chain.cert.pem",

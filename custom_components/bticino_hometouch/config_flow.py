@@ -147,6 +147,25 @@ class HometouchConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_STORAGE: str(self._storage), CONF_HOST: "127.0.0.1", CONF_PORT: port, CONF_TOKEN: token,
         }, options={CONF_ENTRANCES: entrances})
 
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Re-read this phone's credentials from the cloud; nothing is created."""
+        entry = self._get_reconfigure_entry()
+        if not entry.data.get(CONF_STORAGE):
+            return self.async_abort(reason="not_standalone")
+        errors: dict[str, str] = {}
+        placeholders = {"error": ""}
+        if user_input is not None:
+            result = await run_setup("refresh", user_input[CONF_EMAIL].strip(), user_input[CONF_PASSWORD],
+                                     "--storage", entry.data[CONF_STORAGE])
+            if result.get("ok"):
+                return self.async_update_reload_and_abort(entry, reason="credentials_refreshed")
+            errors["base"] = "setup_failed"
+            placeholders["error"] = result.get("error", "")
+        return self.async_show_form(step_id="reconfigure", data_schema=vol.Schema({
+            vol.Required(CONF_EMAIL): str,
+            vol.Required(CONF_PASSWORD): str,
+        }), errors=errors, description_placeholders=placeholders)
+
     # Entries made with older versions point to an external listener (host, port, token).
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm()

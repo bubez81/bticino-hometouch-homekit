@@ -94,6 +94,31 @@ class PluginSetupTests(unittest.TestCase):
                 setup.main(["apply", "--plant-id", "P1", "--storage", tmp, "--device-name", "Home Assistant BTicino"])
         self.assertEqual(seen["reuse"], "Home Assistant BTicino")
 
+    def test_refresh_updates_credentials_without_creating(self):
+        class Cloud(FakeClient):
+            def sip_accounts(self, plant_id, gateway_id):
+                assert (plant_id, gateway_id) == ("P1", "GW")
+                return [{"SipAccount": "a@gw", "SipPassword": "same", "Username": "digest-user"},
+                        {"SipAccount": "b@gw", "SipPassword": "other", "Username": "x"}]
+            def create_sip_account(self, account):
+                raise AssertionError("refresh must not create")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = Path(tmp)
+            private = storage / "private" / "sip"
+            private.mkdir(parents=True)
+            onboard.atomic_private_json(private / "sip_credentials.json", {"SipAccount": "a@gw", "SipPassword": "same"})
+            onboard.atomic_private_json(private / "selection.json", {"PlantId": "P1", "GatewayId": "GW"})
+            onboard.atomic_private_json(storage / "onboarding.json", {"credentials_file": "private/sip/sip_credentials.json"})
+            out = io.StringIO()
+            env = {"BTICINO_DOORENTRY_EMAIL": "bridge@example.com", "BTICINO_DOORENTRY_PASSWORD": "secret"}
+            with patch.dict(os.environ, env), patch.object(onboard, "EliotClient", Cloud), redirect_stdout(out):
+                self.assertEqual(setup.main(["refresh", "--storage", tmp]), 0)
+            self.assertEqual(json.loads(out.getvalue()), {"ok": True, "updated": ["Username"]})
+            saved = json.loads((private / "sip_credentials.json").read_text())
+            self.assertEqual(saved, {"SipAccount": "a@gw", "SipPassword": "same", "Username": "digest-user"})
+            self.assertEqual((private / "sip_credentials.json").stat().st_mode & 0o777, 0o600)
+
     def test_missing_credentials_is_reported_not_raised(self):
         out = io.StringIO()
         with patch.dict(os.environ, {"BTICINO_DOORENTRY_EMAIL": "", "BTICINO_DOORENTRY_PASSWORD": ""}), redirect_stdout(out):

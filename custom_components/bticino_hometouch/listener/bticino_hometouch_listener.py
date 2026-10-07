@@ -663,6 +663,16 @@ def load_credentials():
     return username, account, password
 
 
+def load_auth_username(default):
+    """Digest user name: the cloud's `Username` of the endpoint, which is not
+    the SIP account's user part; older credential files lack it."""
+    try:
+        value = json.loads(CREDS_FILE.read_text()).get("Username")
+    except (OSError, ValueError, AttributeError):
+        value = None
+    return value.strip() if isinstance(value, str) and value.strip() else default
+
+
 def make_tls_context():
     ctx = ssl.create_default_context(cafile=str(CA_FILE))
 
@@ -1258,6 +1268,7 @@ class HomtouchListener:
 
     def __init__(self):
         self.username, self.account, self.password = load_credentials()
+        self.auth_username = load_auth_username(self.username)
 
         self.sock = None
         self.stream = None
@@ -1483,7 +1494,7 @@ class HomtouchListener:
         challenge = parse_digest_challenge(challenge_value)
 
         auth = digest_authorization(
-            username=self.username,
+            username=self.auth_username,
             password=self.password,
             method="REGISTER",
             uri=f"sip:{DOMAIN}",
