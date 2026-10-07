@@ -401,6 +401,9 @@ class EliotClient:
     def create_sip_account(self, account: dict[str, str]) -> dict[str, Any]:
         try:
             response = self.request("POST", "/eliot/sip/user", account, response_kind="binary")
+            if response.status in (200, 201, 204) and not response.body.strip():
+                # Created without a body: the account comes from the following GET.
+                return {}
             value = response.json()
         except OnboardingError as exc:
             raise OnboardingError(

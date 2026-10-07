@@ -41,6 +41,14 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (Home Assistant integration 0.2.0, plugin setup)
+
+- Phone creation stopped with "Risposta cloud non valida (HTTP 201 … byte=0)"
+  when the cloud confirmed the new SIP endpoint without a body: an empty 2xx
+  answer is accepted and the account is read from the endpoint list. A phone
+  with the same name left by an interrupted setup is reused instead of creating
+  a second one.
+
 ### Added (Home Assistant integration 0.2.0)
 
 - The integration works on its own, without Homebridge or a separate listener:

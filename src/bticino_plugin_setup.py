@@ -66,8 +66,11 @@ def apply_command(args):
         raise onboard.OnboardingError("Già configurato: i file del bridge esistono già")
     accounts = client.sip_accounts(plant_id, gateway_id)
     provisioned, _ = onboard.split_sip_records(accounts)
+    # An endpoint with this name left by an interrupted setup is reused, not duplicated.
+    existing = [a for a in provisioned if a.get("DeviceName") == args.device_name]
     config_path = onboard.provision(client, email, plant, plant_id, gateway_id, provisioned, private,
-                                    args.openssl, args.device_name, log=log)
+                                    args.openssl, args.device_name,
+                                    reuse_endpoint=args.device_name if existing else None, log=log)
     config = json.loads(config_path.read_text(encoding="utf-8"))
     # Paths relative to the data folder: the plugin resolves them, so the
     # folder can be moved without editing them.
