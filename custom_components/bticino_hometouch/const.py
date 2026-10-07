@@ -2,6 +2,10 @@
 
 DOMAIN = "bticino_hometouch"
 DEFAULT_PORT = 8790
+# Private data of the integration's own phone, under the configuration folder.
+STORAGE_DIR = "bticino_hometouch"
+CONF_STORAGE = "storage"
+CONF_ENTRANCES = "entrances"
 MANUFACTURER = "BTicino"
 MODEL = "HOMETOUCH (via listener)"
 

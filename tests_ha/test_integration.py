@@ -19,20 +19,67 @@ async def wait_for(predicate, timeout=5.0):
         await asyncio.sleep(0.05)
 
 
-async def test_config_flow(hass, listener):
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert result["type"] is FlowResultType.FORM
-    bad = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: "127.0.0.1", CONF_PORT: listener.port, CONF_TOKEN: "wrong-token-0123456789abcdefgh"})
-    assert bad["errors"] == {"base": "invalid_auth"}
-    unreachable = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: "127.0.0.1", CONF_PORT: 1, CONF_TOKEN: TOKEN})
-    assert unreachable["errors"] == {"base": "cannot_connect"}
-    ok = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: "127.0.0.1", CONF_PORT: listener.port, CONF_TOKEN: TOKEN})
+async def test_config_flow_signs_in_and_sets_up_the_phone(hass, listener, tmp_path):
+    from unittest.mock import AsyncMock, patch
+    calls = []
+
+    async def run_setup(command, email, password, *args):
+        calls.append((command, email, args))
+        assert password == "secret"
+        if command == "plants":
+            return {"ok": True, "plants": [{"id": "P1", "name": "Casa"}, {"id": "P2", "name": "Ufficio"}]}
+        return {"ok": True, "plant": "Casa", "entrances": [{"name": "Ingresso", "address": "20"}]}
+
+    hass.config.config_dir = str(tmp_path)
+    runtime = AsyncMock()
+    with patch("custom_components.bticino_hometouch.config_flow.run_setup", run_setup), \
+         patch("custom_components.bticino_hometouch.config_flow.prepare_api", return_value=(listener.port, TOKEN)), \
+         patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+        assert result["step_id"] == "user"
+        plant = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"email": "bridge@example.com", "password": "secret"})
+        assert plant["step_id"] == "plant"
+        done = await hass.config_entries.flow.async_configure(plant["flow_id"], {"plant": "P1"})
+        assert done["type"] is FlowResultType.CREATE_ENTRY
+        assert done["title"] == "Casa"
+        assert done["data"][CONF_PORT] == listener.port and done["data"]["storage"].endswith("bticino_hometouch")
+        assert done["options"]["entrances"] == [{"name": "Ingresso", "address": "20"}]
+        assert calls[1][0] == "apply" and "--plant-id" in calls[1][2] and "P1" in calls[1][2]
+        await hass.async_block_till_done()
+        assert hass.states.async_entity_ids("event"), "doorbell entity created"
+        await hass.config_entries.async_unload(done["result"].entry_id)
+    runtime.stop.assert_awaited()
+
+
+async def test_config_flow_reports_sign_in_errors(hass):
+    from unittest.mock import patch
+
+    async def run_setup(command, email, password, *args):
+        return {"ok": False, "error": "Credenziali non valide"}
+
+    with patch("custom_components.bticino_hometouch.config_flow.run_setup", run_setup):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+        bad = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"email": "bridge@example.com", "password": "nope"})
+    assert bad["errors"] == {"base": "setup_failed"}
+
+
+async def test_options_edit_entrances(hass, listener):
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "127.0.0.1", CONF_PORT: listener.port, CONF_TOKEN: TOKEN},
+                            options={"entrances": [{"name": "Scala", "address": "20"}]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    assert form["data_schema"]({})["entrances"] == "Scala=20"
+    bad = await hass.config_entries.options.async_configure(form["flow_id"], {"entrances": "Scala=venti"})
+    assert bad["errors"] == {"entrances": "invalid_entrances"}
+    ok = await hass.config_entries.options.async_configure(bad["flow_id"], {"entrances": "Scala=20, Esterno=21"})
     assert ok["type"] is FlowResultType.CREATE_ENTRY
-    assert ok["data"][CONF_PORT] == listener.port
-    await hass.config_entries.async_unload(ok["result"].entry_id)
+    assert entry.options["entrances"][1] == {"name": "Esterno", "address": "21"}
+    await hass.async_block_till_done()
+    await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_entities_events_and_opening(hass, listener):

@@ -3,12 +3,22 @@
     "step": {
       "user": {
         "title": "BTicino HOMETOUCH",
-        "description": "Listener address and network API token (the `api_token` file on the listener host).",
+        "description": "Sign in with a **dedicated** Door Entry account, invited to the system by its owner (not your personal account). Home Assistant becomes one more phone of the system; the password is not stored.",
         "data": {
-          "host": "Host",
-          "port": "Port",
-          "token": "API token"
+          "email": "E-mail",
+          "password": "Password"
         }
+      },
+      "plant": {
+        "title": "System",
+        "description": "Choose the system to connect.",
+        "data": {
+          "plant": "System"
+        }
+      },
+      "reuse": {
+        "title": "Existing connection",
+        "description": "A previous connection to the system was found in the configuration folder. Use it again (no new phone is created)."
       },
       "reauth_confirm": {
         "title": "New token",
@@ -19,12 +29,15 @@
       }
     },
     "error": {
+      "setup_failed": "Setup failed: {error}",
+      "no_plants": "No system visible: accept the invitation in the Door Entry app first",
       "cannot_connect": "Cannot reach the listener",
-      "invalid_auth": "Invalid token or client not allowed",
-      "unsupported_version": "Unsupported API version"
+      "invalid_auth": "Invalid token or client not allowed"
     },
     "abort": {
-      "already_configured": "Listener already configured",
+      "single_instance_allowed": "Already configured",
+      "already_configured": "This system is already configured",
+      "setup_failed": "Setup failed: {error}",
       "reauth_successful": "Token updated"
     }
   },
@@ -67,6 +80,20 @@
           "not_recognized": "Not recognized"
         }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Entrances",
+        "description": "One opening button per entrance: name and lock address, separated by commas. Example: `Scala=20, Esterno=21` (the entrance panel's lock is usually 20, a second one 21).",
+        "data": {
+          "entrances": "Entrances"
+        }
+      }
+    },
+    "error": {
+      "invalid_entrances": "Use name=address, separated by commas"
     }
   }
 }

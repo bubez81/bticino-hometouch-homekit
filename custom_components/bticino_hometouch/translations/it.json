@@ -3,28 +3,41 @@
     "step": {
       "user": {
         "title": "BTicino HOMETOUCH",
-        "description": "Indirizzo del listener e token dell'API di rete (file `api_token` sull'host del listener).",
+        "description": "Accedi con un account Door Entry **dedicato**, invitato all'impianto dal proprietario (non il tuo account personale). Home Assistant diventa un telefono in più dell'impianto; la password non viene salvata.",
         "data": {
-          "host": "Host",
-          "port": "Porta",
-          "token": "Token API"
+          "email": "E-mail",
+          "password": "Password"
         }
+      },
+      "plant": {
+        "title": "Impianto",
+        "description": "Scegli l'impianto da collegare.",
+        "data": {
+          "plant": "Impianto"
+        }
+      },
+      "reuse": {
+        "title": "Collegamento esistente",
+        "description": "Nella cartella di configurazione c'è già un collegamento all'impianto. Usalo di nuovo (non viene creato un altro telefono)."
       },
       "reauth_confirm": {
         "title": "Nuovo token",
-        "description": "Il token non è più valido: inserisci quello attuale.",
+        "description": "Il token non è più valido; inserisci quello attuale.",
         "data": {
           "token": "Token API"
         }
       }
     },
     "error": {
+      "setup_failed": "Configurazione non riuscita: {error}",
+      "no_plants": "Nessun impianto visibile: accetta prima l'invito nell'app Door Entry",
       "cannot_connect": "Listener non raggiungibile",
-      "invalid_auth": "Token non valido o client non autorizzato",
-      "unsupported_version": "Versione dell'API non supportata"
+      "invalid_auth": "Token non valido o client non autorizzato"
     },
     "abort": {
-      "already_configured": "Listener già configurato",
+      "single_instance_allowed": "Già configurato",
+      "already_configured": "Questo impianto è già configurato",
+      "setup_failed": "Configurazione non riuscita: {error}",
       "reauth_successful": "Token aggiornato"
     }
   },
@@ -67,6 +80,20 @@
           "not_recognized": "Non riconosciuto"
         }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ingressi",
+        "description": "Un pulsante di apertura per ingresso: nome e indirizzo della serratura, separati da virgole. Esempio: `Scala=20, Esterno=21` (la serratura del posto esterno di solito è 20, una seconda 21).",
+        "data": {
+          "entrances": "Ingressi"
+        }
+      }
+    },
+    "error": {
+      "invalid_entrances": "Usa nome=indirizzo, separati da virgole"
     }
   }
 }
