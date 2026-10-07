@@ -331,3 +331,21 @@ class OnboardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PythonCsrTests(unittest.TestCase):
+    def test_key_and_csr_without_openssl(self):
+        try:
+            from cryptography import x509
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        import tempfile
+        from pathlib import Path
+        directory = Path(tempfile.mkdtemp())
+        from src import bticino_onboard as onboard
+        csr = onboard.generate_key_and_csr("no-such-openssl-binary", "user/x@gw.example", directory / "k.pem", directory / "c.pem")
+        request = x509.load_pem_x509_csr(csr.encode())
+        self.assertTrue(request.is_signature_valid)
+        self.assertEqual(request.subject.rfc4514_string(), "CN=user_x@gw.example")
+        self.assertTrue((directory / "k.pem").read_text().startswith("-----BEGIN EC PRIVATE KEY-----"))
+        self.assertEqual((directory / "k.pem").stat().st_mode & 0o777, 0o600)

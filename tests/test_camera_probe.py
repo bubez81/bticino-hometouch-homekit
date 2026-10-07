@@ -95,6 +95,12 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(command[command.index('libopus') - 2:command.index('libopus')], ['0:a:0', '-c:a'])
             self.assertNotIn('pcm_s16le', command)
             decoder.close()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(probe.os.environ, BTICINO_LIVE_AUDIO_CODEC='aac'), patch.object(probe.socket, 'socket', return_value=Mock()), patch.object(probe.tempfile, 'mkdtemp', return_value=tmp), patch.object(probe.subprocess, 'Popen') as launch:
+            decoder = probe.FrameDecoder(SimpleNamespace(FFMPEG='ffmpeg'), client, b'', stream=True,
+                                         audio=('97', '1', 'AUDIO_KEY'))
+            command = launch.call_args.args[0]
+            self.assertEqual(command[command.index('-c:a') + 1], 'aac')
+            decoder.close()
         with tempfile.TemporaryDirectory() as tmp, patch.dict(probe.os.environ, BTICINO_LIVE_AUDIO_PORT='40010'), patch.object(probe.socket, 'socket', return_value=Mock()), patch.object(probe.tempfile, 'mkdtemp', return_value=tmp), patch.object(probe.subprocess, 'Popen') as launch:
             decoder = probe.FrameDecoder(SimpleNamespace(FFMPEG='ffmpeg'), client, b'', stream=True,
                                          audio=('97', '1', 'AUDIO_KEY'))

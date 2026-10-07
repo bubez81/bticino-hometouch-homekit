@@ -41,6 +41,31 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (Home Assistant integration 0.2.0)
+
+- The integration works on its own, without Homebridge or a separate listener:
+  the config flow signs in with the dedicated Door Entry account, lets you
+  choose the system and creates the integration's own phone (*Home Assistant
+  BTicino*); the bundled listener (`custom_components/bticino_hometouch/listener`,
+  kept in sync with `src/` by `tools/sync_listener.py`) runs as a supervised
+  child process with restart back-off. Private files live in
+  `/config/bticino_hometouch`. A static FFmpeg with Speex
+  (ffmpeg-for-homebridge v2.2.2) is downloaded once and checked against its
+  SHA-256, because Home Assistant's FFmpeg lacks Speex.
+- Live video with sound through Home Assistant's built-in go2rtc: a local
+  MPEG-TS view (H.264 + AAC) opens an on-demand camera call or relays the ring
+  call's video, and falls back to the latest picture.
+- Options: entrances as `Name=address` pairs, one opening button each.
+- Without the `openssl` command (Home Assistant OS), the onboarding creates the
+  key and certificate request with the `cryptography` library.
+- `BTICINO_LIVE_AUDIO_CODEC=aac` makes the camera probe send AAC instead of
+  Opus.
+
+### Changed (Home Assistant integration 0.2.0)
+
+- Entries created by earlier versions, connected to an external listener's
+  API, keep working; the Home Assistant guide describes the standalone setup.
+
 ### Added (plugin 0.9.3)
 
 - The plugin keeps its own log, `bticino-hometouch/plugin.log` (rotated at

@@ -28,6 +28,7 @@ class HometouchHub:
         self.state: dict[str, Any] = {}
         self.connected = False
         self.snapshot_version = 0
+        self.live_url: str | None = None
         self._listeners: list[Listener] = []
         self._task: asyncio.Task | None = None
 

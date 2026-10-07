@@ -22,7 +22,8 @@ class HometouchCamera(HometouchEntity, Camera):
     def __init__(self, hub) -> None:
         HometouchEntity.__init__(self, hub, "camera")
         Camera.__init__(self)
-        self._live_url = hub.info.get("live_rtsp_url")
+        # Bundled listener: local MPEG-TS; external listener: its go2rtc RTSP URL.
+        self._live_url = hub.live_url or hub.info.get("live_rtsp_url")
         if self._live_url:
             # Home Assistant's built-in go2rtc turns this RTSP source into WebRTC.
             self._attr_supported_features = CameraEntityFeature.STREAM
