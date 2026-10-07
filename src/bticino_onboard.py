@@ -240,6 +240,31 @@ def camera_candidates(blob: bytes) -> list[dict[str, str]]:
     return candidates
 
 
+def device_inventory(blob: bytes) -> list[dict[str, Any]]:
+    """Device types and addresses in archive.xml; names and other values are omitted."""
+    members = configuration_members(blob)
+    data = members.get("archive.xml")
+    if not data:
+        return []
+    if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
+        raise OnboardingError("Dichiarazioni XML non supportate")
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError as exc:
+        raise OnboardingError("Configurazione XML non valida") from exc
+    rows = []
+    for node in root.iter("obj"):
+        cid, dev, where = node.get("cid"), node.get("dev"), node.get("where")
+        def code(value, pattern=r"[A-Za-z0-9_#*.-]{1,24}"):
+            return value if re.fullmatch(pattern, value or "") else ("-" if value is None else "?")
+        rows.append({"cid": code(cid), "dev": code(dev), "where": code(where),
+                     # Entrance panels carry the addresses of their locks.
+                     "lock": code(node.get("lock")), "staircase": code(node.get("staircase")),
+                     "id": code(node.get("id")),
+                     "attributes": sorted(node.attrib)})
+    return rows
+
+
 @dataclass
 class CloudResponse:
     body: bytes
@@ -541,6 +566,97 @@ def split_sip_records(accounts: list[dict[str, Any]]) -> tuple[list[dict[str, An
     return provisioned, pending
 
 
+def provision(client: EliotClient, email: str, plant: dict[str, Any], plant_id: str, gateway_id: str,
+              provisioned: list[dict[str, Any]], output_dir: Path, openssl: str, device_name: str,
+              device_id: str | None = None, reuse_endpoint: str | None = None, log=print) -> Path:
+    """Create (or recover) the SIP endpoint and write the private runtime files."""
+    if reuse_endpoint:
+        matches = [a for a in provisioned if a.get("DeviceName") == reuse_endpoint]
+        if len(matches) != 1:
+            raise OnboardingError("Recupero richiede esattamente un endpoint con il nome indicato")
+        recovered = matches[0]
+        if not isinstance(recovered.get("SipPassword"), str) or not recovered["SipPassword"].strip():
+            raise OnboardingError("Password SIP non recuperabile; nessuna creazione tentata")
+        if device_id:
+            raise OnboardingError("Non combinare --device-id con --reuse-endpoint")
+        if output_dir.resolve().exists() and any(output_dir.resolve().iterdir()):
+            raise OnboardingError("Per il recupero scegliere una directory --output nuova o vuota")
+    else:
+        recovered = None
+
+    if recovered is None and len(provisioned) >= KNOWN_HOMETOUCH_SIP_LIMIT:
+        raise OnboardingError(
+            f"Impianto pieno: {len(provisioned)}/{KNOWN_HOMETOUCH_SIP_LIMIT} "
+            "endpoint SIP. Nessuna creazione tentata; liberare uno slot tramite "
+            "assistenza BTicino o rimuovendo un utente dell’impianto non più usato."
+        )
+
+    device_id = str(recovered["IdDevice"]) if recovered else (device_id or secrets.token_hex(6)).upper()
+    if not re.fullmatch(r"[0-9A-F]{12}", device_id):
+        raise OnboardingError("--device-id deve contenere 12 caratteri esadecimali")
+    local_part = email.replace("@", "-")
+    sip_account = str(recovered["SipAccount"]) if recovered else f"{local_part}-{device_id}@{gateway_id}.bs.iotleg.com"
+    request_account = {
+        "SipAccount": sip_account,
+        "DeviceName": device_name,
+        "GatewayId": gateway_id,
+        "IdDevice": device_id,
+    }
+    log("Recupero endpoint SIP esistente…" if recovered else "Creazione endpoint SIP dedicato…")
+    created = recovered if recovered else client.create_sip_account(request_account)
+    # Some service versions return the account only on the subsequent GET.
+    refreshed = [] if recovered else client.sip_accounts(plant_id, gateway_id)
+    matches = [a for a in refreshed if a.get("SipAccount") == sip_account]
+    # Preserve one-time values, notably a SIP password returned only by POST.
+    account = {**created, **matches[0]} if matches else created
+    sip_password = account.get("SipPassword")
+    if not sip_password:
+        raise OnboardingError("Account creato ma password SIP non restituita")
+
+    output = output_dir.resolve()
+    output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(output, 0o700)
+    key_path = output / "client.key"
+    csr_path = output / "client.csr.pem"
+    cert_path = output / "client.cert.pem"
+    ca_path = output / "ca-chain.cert.pem"
+    log("Generazione della chiave privata locale e richiesta certificato…")
+    csr = generate_key_and_csr(openssl, sip_account, key_path, csr_path)
+    certificate_blob = client.sign_certificate(sip_account, csr)
+    extract_certificates(certificate_blob, sip_account, cert_path, ca_path)
+    csr_path.unlink(missing_ok=True)
+
+    credentials = output / "sip_credentials.json"
+    atomic_private_json(credentials, {
+        "SipAccount": sip_account,
+        "SipPassword": sip_password,
+        "GatewayId": gateway_id,
+        "IdDevice": device_id,
+    })
+    atomic_private_json(output / "selection.json", {
+        "PlantId": plant_id,
+        "GatewayId": gateway_id,
+        "PlantName": plant.get("PlantName", ""),
+    })
+    sip_domain = sip_account.split("@", 1)[1]
+    atomic_private_json(output / "config.json", {
+        "base_dir": str(output / "runtime"),
+        "ffmpeg": shutil.which("ffmpeg") or "ffmpeg",
+        "openssl": openssl,
+        "sip_server": "sipserver.bs.iotleg.com",
+        "sip_port": 5061,
+        "sip_domain": sip_domain,
+        "credentials_file": str(credentials),
+        "certificate_file": str(cert_path),
+        "private_key_file": str(key_path),
+        "ca_file": str(ca_path),
+        "homekit_doorbell_name": "Videocitofono",
+        "save_raw_sip": False,
+    })
+    log(f"Provisioning completato in {output}")
+    return output / "config.json"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Onboarding BTicino HOMETOUCH")
     parser.add_argument("--portal", default=DEFAULT_PORTAL)
@@ -570,6 +686,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--diagnose-activations", action="store_true",
         help="mostra solo tag e attributi della configurazione, senza valori",
     )
+    parser.add_argument("--list-devices", action="store_true",
+                        help="elenca tipi e indirizzi dei dispositivi dell’impianto, senza nomi")
     parser.add_argument("--export-camera-candidates", action="store_true",
                         help="salva candidati video privati, senza inviare comandi SIP")
     return parser
@@ -622,6 +740,14 @@ def main(argv: list[str] | None = None) -> int:
         atomic_private_json(args.output / "camera-candidates.json",
                             {"version": 1, "candidates": candidates})
         print(f"Candidati video salvati privatamente: {len(candidates)}. Nessun comando SIP inviato.")
+        return 0
+    if args.list_devices:
+        rows = device_inventory(client.plant_configuration(plant_id, gateway_id))
+        print(f"Dispositivi nell’archivio: {len(rows)} (10050 posto esterno, 10061 TVCC, 10060 serratura)")
+        for row in rows:
+            print(f"  tipo={row['cid']} id={row['id']} dev={row['dev']} indirizzo={row['where']} "
+                  f"lock={row['lock']} staircase={row['staircase']} attributi={','.join(row['attributes'])}")
+        print("Nessuna modifica eseguita.")
         return 0
     if args.diagnose_activations:
         configuration = client.plant_configuration(plant_id, gateway_id)
@@ -682,90 +808,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Ripetere con --apply soltanto dopo aver verificato account e impianto.")
         return 0
 
-    if args.reuse_endpoint:
-        matches = [a for a in provisioned if a.get("DeviceName") == args.reuse_endpoint]
-        if len(matches) != 1:
-            raise OnboardingError("Recupero richiede esattamente un endpoint con il nome indicato")
-        recovered = matches[0]
-        if not isinstance(recovered.get("SipPassword"), str) or not recovered["SipPassword"].strip():
-            raise OnboardingError("Password SIP non recuperabile; nessuna creazione tentata")
-        if args.device_id:
-            raise OnboardingError("Non combinare --device-id con --reuse-endpoint")
-        if args.output.resolve().exists() and any(args.output.resolve().iterdir()):
-            raise OnboardingError("Per il recupero scegliere una directory --output nuova o vuota")
-    else:
-        recovered = None
-
-    if recovered is None and len(provisioned) >= KNOWN_HOMETOUCH_SIP_LIMIT:
-        raise OnboardingError(
-            f"Impianto pieno: {len(provisioned)}/{KNOWN_HOMETOUCH_SIP_LIMIT} "
-            "endpoint SIP. Nessuna creazione tentata; liberare uno slot tramite "
-            "assistenza BTicino o rimuovendo un utente dell’impianto non più usato."
-        )
-
-    device_id = str(recovered["IdDevice"]) if recovered else (args.device_id or secrets.token_hex(6)).upper()
-    if not re.fullmatch(r"[0-9A-F]{12}", device_id):
-        raise OnboardingError("--device-id deve contenere 12 caratteri esadecimali")
-    local_part = email.replace("@", "-")
-    sip_account = str(recovered["SipAccount"]) if recovered else f"{local_part}-{device_id}@{gateway_id}.bs.iotleg.com"
-    request_account = {
-        "SipAccount": sip_account,
-        "DeviceName": args.device_name,
-        "GatewayId": gateway_id,
-        "IdDevice": device_id,
-    }
-    print("Recupero endpoint SIP esistente…" if recovered else "Creazione endpoint SIP dedicato…")
-    created = recovered if recovered else client.create_sip_account(request_account)
-    # Some service versions return the account only on the subsequent GET.
-    refreshed = [] if recovered else client.sip_accounts(plant_id, gateway_id)
-    matches = [a for a in refreshed if a.get("SipAccount") == sip_account]
-    # Preserve one-time values, notably a SIP password returned only by POST.
-    account = {**created, **matches[0]} if matches else created
-    sip_password = account.get("SipPassword")
-    if not sip_password:
-        raise OnboardingError("Account creato ma password SIP non restituita")
-
-    output = args.output.resolve()
-    output.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(output, 0o700)
-    key_path = output / "client.key"
-    csr_path = output / "client.csr.pem"
-    cert_path = output / "client.cert.pem"
-    ca_path = output / "ca-chain.cert.pem"
-    print("Generazione della chiave privata locale e richiesta certificato…")
-    csr = generate_key_and_csr(args.openssl, sip_account, key_path, csr_path)
-    certificate_blob = client.sign_certificate(sip_account, csr)
-    extract_certificates(certificate_blob, sip_account, cert_path, ca_path)
-    csr_path.unlink(missing_ok=True)
-
-    credentials = output / "sip_credentials.json"
-    atomic_private_json(credentials, {
-        "SipAccount": sip_account,
-        "SipPassword": sip_password,
-        "GatewayId": gateway_id,
-        "IdDevice": device_id,
-    })
-    atomic_private_json(output / "selection.json", {
-        "PlantId": plant_id,
-        "GatewayId": gateway_id,
-        "PlantName": plant.get("PlantName", ""),
-    })
-    sip_domain = sip_account.split("@", 1)[1]
-    atomic_private_json(output / "config.json", {
-        "base_dir": str(output / "runtime"),
-        "ffmpeg": shutil.which("ffmpeg") or "ffmpeg",
-        "openssl": args.openssl,
-        "sip_server": "sipserver.bs.iotleg.com",
-        "sip_port": 5061,
-        "sip_domain": sip_domain,
-        "credentials_file": str(credentials),
-        "certificate_file": str(cert_path),
-        "private_key_file": str(key_path),
-        "ca_file": str(ca_path),
-        "homekit_doorbell_name": "Videocitofono",
-        "save_raw_sip": False,
-    })
-    print(f"Provisioning completato in {output}")
+    provision(client, email, plant, plant_id, gateway_id, provisioned, args.output, args.openssl,
+              args.device_name, args.device_id, args.reuse_endpoint)
     print("I file sono privati (mode 600); non copiarli nel repository.")
     return 0
 

@@ -4,6 +4,53 @@ Changes are dated by publication. This project remains experimental; entries
 describe implemented behavior separately from physical validation. No stable
 release or npm publication is implied.
 
+## 2026-10-07
+
+### Added
+
+- All-in-one Homebridge plugin (platform `BTicinoHometouch`): the plugin starts
+  and supervises the bundled Python listener (restart with back-off, clean stop
+  with BYE), keeps its private files in Homebridge's storage
+  (`bticino-hometouch/`, owner-only), and uses `ffmpeg-for-homebridge`, which
+  includes Speex and Opus. One Video Doorbell accessory carries the camera,
+  two-way audio and **one lock per entrance** (name and address configurable;
+  opening is a pulse). An option enables the network API for the Home Assistant
+  integration and creates its token.
+- Settings page in the Homebridge UI: sign in with the dedicated Door Entry
+  account, choose the system, *Configura* creates the bridge's SIP endpoint and
+  certificate, writes the private files and adds the entrance panel's gate
+  (address `dev + where`, as the official app builds it); *Prova apertura*
+  checks each saved gate. The password is never stored. A private Python
+  environment with `pyzipper` is created on first use.
+- `bticino-onboard --list-devices`: read-only list of device types and
+  addresses of the system, without names.
+
+### Changed
+
+- The onboarding's provisioning step is a reusable function
+  (`provision`), used by the command line and by the plugin's settings page
+  (`src/bticino_plugin_setup.py`). The command-line behaviour is unchanged.
+- `probe-camera.py` finds the listener through `BTICINO_LISTENER`.
+- The plugin keeps retrying the listener connection instead of giving up when
+  the listener starts after Homebridge.
+- Documentation reduced to one guide: the plugin README (also the npm page)
+  explains requirements, installation in three steps, use, updates and
+  troubleshooting; the repository README is a short overview. Research notes,
+  the old architecture, onboarding and validation pages were removed (they
+  remain in the Git history). The Home Assistant guide stays until the
+  integration is reworked.
+- Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
+
+### Validation
+
+- Python 151 tests (1 skipped) and the plugin's tests, including a platform
+  test with a fake listener and the restart policy.
+- The test installation was migrated to the plugin: same Apple Home pairing
+  (no re-adding), listener registered, live view with sound, both gates opened
+  from the locks inside the doorbell and returned to locked, Home Assistant
+  reconnected with its existing token. The separate listener service, the
+  dedicated MQTT bridge and the mqttthing locks were retired.
+
 ## 2026-10-06
 
 ### Added

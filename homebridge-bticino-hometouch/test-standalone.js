@@ -16,7 +16,7 @@ class PlatformAccessory {
 }
 const types={},handlers={},published=[];
 const api={
-  registerAccessory(_p,name,ctor){types[name]=ctor;},
+  registerAccessory(_p,name,ctor){types[name]=ctor;},registerPlatform(){},
   on(event,fn){(handlers[event]||=[]).push(fn);},
   platformAccessory:PlatformAccessory,
   publishExternalAccessories(plugin,accessories){published.push({plugin,accessories});},

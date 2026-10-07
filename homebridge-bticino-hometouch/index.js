@@ -5,6 +5,11 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { StreamManager } = require('./stream');
 const { installCallUnlock } = require('./call-unlock');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const { ListenerSupervisor } = require('./supervisor');
+const { addEntranceLocks, normalizeEntrances } = require('./entrance-locks');
 const managers = new WeakMap();
 const cameraKey = config => JSON.stringify([config.ipcSocket || '/tmp/bticino-hometouch.sock', config.name || 'BTicino HOMETOUCH']);
 
@@ -15,9 +20,62 @@ const cameraKey = config => JSON.stringify([config.ipcSocket || '/tmp/bticino-ho
  */
 module.exports = (api) => {
   managers.set(api,new Map());
+  api.registerPlatform('homebridge-bticino-hometouch', 'BTicinoHometouch', BTicinoPlatform);
   api.registerAccessory('homebridge-bticino-hometouch', 'BTicinoHOMETOUCH', BTicinoAccessory);
   api.registerAccessory('homebridge-bticino-hometouch', 'BTicinoCallLock', BTicinoCallLock);
 };
+
+// FFmpeg for video, snapshots and audio: ffmpeg-for-homebridge includes libspeex
+// (the gateway's audio codec) and libopus (HomeKit's).
+function bundledFfmpeg() {
+  try { return require('ffmpeg-for-homebridge'); } catch (_) { return null; }
+}
+
+/**
+ * All-in-one platform: runs the bundled listener and publishes one Video
+ * Doorbell accessory with live view, two-way audio and one lock per entrance.
+ */
+class BTicinoPlatform {
+  constructor(log, config, api) {
+    this.log = log;
+    this.config = config || {};
+    this.api = api;
+    const storage = this.config.storagePath || path.join(api.user.storagePath(), 'bticino-hometouch');
+    const ffmpeg = this.config.ffmpegPath || bundledFfmpeg() || 'ffmpeg';
+    const entrances = normalizeEntrances(this.config.entrances);
+    // The settings page creates storage/python (with pyzipper); otherwise the system python3.
+    const venv = path.join(storage, 'python', 'bin', 'python3');
+    const python = this.config.pythonPath || (fs.existsSync(venv) ? venv : 'python3');
+    this.supervisor = new ListenerSupervisor({storage, python, ffmpeg, socket: this.config.ipcSocket,
+      settings: {entrances, api: this.homeAssistantApi(storage)}, log});
+    if (!this.supervisor.start()) return;
+    this.doorbell = new BTicinoAccessory(log, {
+      name: this.config.name || 'Videocitofono', ipcSocket: this.supervisor.socket,
+      enableCamera: true, enableHapLive: true, enableTwoWayAudio: true, standalone: true,
+      ffmpegPath: ffmpeg, audioFfmpegPath: ffmpeg, liveAudio: this.config.liveAudio !== false,
+      entrances, serialNumber: this.config.serialNumber,
+    }, api);
+    api.on('shutdown', () => this.supervisor.stop());
+  }
+
+  // Optional network API for Home Assistant: token created once, shown in the log.
+  homeAssistantApi(storage) {
+    const ha = this.config.homeAssistant;
+    if (!ha || ha.enabled !== true) return null;
+    const file = path.join(storage, 'private', 'api_token');
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(path.dirname(file), {recursive: true, mode: 0o700});
+      fs.writeFileSync(file, crypto.randomBytes(32).toString('base64url') + '\n', {mode: 0o600});
+      this.log.info(`Home Assistant: token created in ${file}; enter it in the BTicino HOMETOUCH integration`);
+    }
+    const port = Number.isInteger(ha.port) && ha.port >= 1024 && ha.port <= 65535 ? ha.port : 8790;
+    return {enabled: true, bind: '0.0.0.0', port, token_file: file,
+      allowed_clients: Array.isArray(ha.allowedClients) ? ha.allowedClients : [],
+      ...(ha.liveRtspUrl ? {live_rtsp_url: ha.liveRtspUrl} : {})};
+  }
+
+  configureAccessory() {}
+}
 
 class BTicinoCallLock {
   constructor(log,config,api) {
@@ -78,7 +136,7 @@ class BTicinoAccessory {
     // standalone: publish the doorbell as its own HAP accessory with the Video Doorbell
     // category (18), like a native HomeKit video doorbell, instead of inside the bridge.
     if (this.config.standalone === true) this.publishStandalone(name);
-    this.api.on('shutdown', () => { if (this.timer) clearInterval(this.timer); this.streamManager.closeAll().catch(err => this.log.error(err.message)); });
+    this.api.on('shutdown', () => { if (this.timer) clearInterval(this.timer); clearTimeout(this.retry); this.streamManager.closeAll().catch(err => this.log.error(err.message)); });
     this.didFinishLaunching();
   }
 
@@ -97,6 +155,9 @@ class BTicinoAccessory {
       .setCharacteristic(hap.Characteristic.SerialNumber, this.config.serialNumber || 'HOMETOUCH');
     if (!this.config.cameraOnly) accessory.addService(this.doorbellService);
     this.controllers.forEach(controller => accessory.configureController(controller));
+    if (Array.isArray(this.config.entrances) && this.config.entrances.length)
+      this.lockServices = addEntranceLocks(this.api, accessory, this.config.entrances,
+        this.config.ipcSocket || '/tmp/bticino-hometouch.sock', this.log);
     this.externalAccessory = accessory;
     this.api.on('didFinishLaunching', () => {
       this.api.publishExternalAccessories('homebridge-bticino-hometouch', [accessory]);
@@ -104,12 +165,17 @@ class BTicinoAccessory {
     });
   }
 
-  didFinishLaunching() {
+  didFinishLaunching(attempt = 0) {
     const socket = this.config.ipcSocket || '/tmp/bticino-hometouch.sock';
     request(socket, 'ping').then(() => {
       this.log.info('BTicino HOMETOUCH IPC connected');
       this.poll(socket);
-    }).catch(() => this.log.warn('BTicino HOMETOUCH IPC unavailable; listener may be stopped'));
+    }).catch(() => {
+      // The listener may still be starting: keep trying instead of giving up.
+      if (attempt === 0) this.log.warn('BTicino HOMETOUCH IPC unavailable; waiting for the listener');
+      this.retry = setTimeout(() => this.didFinishLaunching(attempt + 1), 5000);
+      this.retry.unref?.();
+    });
   }
 
   publishCamera(name) {

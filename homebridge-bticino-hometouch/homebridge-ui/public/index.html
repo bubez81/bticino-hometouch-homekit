@@ -1,0 +1,79 @@
+<div id="setup" style="display:none">
+  <p class="mb-2"><strong>Primo collegamento all'impianto BTicino HOMETOUCH</strong></p>
+  <p class="text-muted small">
+    Usa un <strong>account Door Entry dedicato</strong>, invitato all'impianto dal proprietario
+    (non il tuo account personale). Il plugin crea un telefono SIP per Homebridge sull'impianto;
+    la password non viene salvata.
+  </p>
+  <div class="mb-2"><label class="form-label" for="email">Email dell'account dedicato</label>
+    <input class="form-control" id="email" type="email" autocomplete="username"></div>
+  <div class="mb-2"><label class="form-label" for="password">Password</label>
+    <input class="form-control" id="password" type="password" autocomplete="current-password"></div>
+  <button class="btn btn-primary" id="login">Accedi</button>
+  <div id="plants" class="mt-3" style="display:none">
+    <label class="form-label" for="plant">Impianto</label>
+    <select class="form-select mb-2" id="plant"></select>
+    <button class="btn btn-primary" id="apply">Configura</button>
+  </div>
+</div>
+<div id="done" style="display:none" class="mb-3">
+  <div class="alert alert-success mb-2">Impianto collegato. Controlla i nomi degli ingressi, salva e riavvia Homebridge;
+    poi in Casa aggiungi <strong>Videocitofono</strong> con il codice mostrato nel log.</div>
+  <div id="tests" class="mb-2"></div>
+</div>
+<script>
+(async () => {
+  const show = (id, visible) => { document.getElementById(id).style.display = visible ? '' : 'none'; };
+  const credentials = () => ({email: document.getElementById('email').value, password: document.getElementById('password').value});
+  // One "Prova apertura" button per saved entrance: it really opens that gate.
+  const testButtons = async () => {
+    const box = document.getElementById('tests');
+    box.innerHTML = '';
+    const config = (await homebridge.getPluginConfig())[0] || {};
+    for (const entrance of config.entrances || []) {
+      const button = document.createElement('button');
+      button.className = 'btn btn-outline-secondary btn-sm me-2 mb-1';
+      button.textContent = `Prova apertura: ${entrance.name}`;
+      button.addEventListener('click', async () => {
+        if (!confirm(`Aprire davvero "${entrance.name}"?`)) return;
+        try { await homebridge.request('/test-open', {name: entrance.name, entrances: config.entrances});
+              homebridge.toast.success(`Comando inviato a ${entrance.name}`); }
+        catch (error) { homebridge.toast.error(error.message, 'Prova non riuscita'); }
+      });
+      box.appendChild(button);
+    }
+  };
+  const status = await homebridge.request('/status');
+  if (status.configured) { show('done', true); await testButtons(); homebridge.showSchemaForm(); return; }
+  show('setup', true);
+  document.getElementById('login').addEventListener('click', async () => {
+    homebridge.showSpinner();
+    try {
+      const {plants} = await homebridge.request('/plants', credentials());
+      const select = document.getElementById('plant');
+      select.innerHTML = '';
+      for (const plant of plants) select.add(new Option(plant.name, plant.id));
+      if (!plants.length) throw new Error('Nessun impianto visibile: accetta prima l\'invito nell\'app Door Entry');
+      show('plants', true);
+    } catch (error) { homebridge.toast.error(error.message, 'Accesso non riuscito'); }
+    finally { homebridge.hideSpinner(); }
+  });
+  document.getElementById('apply').addEventListener('click', async () => {
+    homebridge.showSpinner();
+    try {
+      const result = await homebridge.request('/apply', {...credentials(), plantId: document.getElementById('plant').value});
+      document.getElementById('password').value = '';
+      const configs = await homebridge.getPluginConfig();
+      const config = {platform: 'BTicinoHometouch', name: 'Videocitofono', ...(configs[0] || {})};
+      if (!Array.isArray(config.entrances) || !config.entrances.length) config.entrances = result.entrances;
+      await homebridge.updatePluginConfig([config]);
+      await homebridge.savePluginConfig();
+      homebridge.toast.success(`Collegato a ${result.plant}`, 'BTicino HOMETOUCH');
+      show('setup', false); show('done', true);
+      await testButtons();
+      homebridge.showSchemaForm();
+    } catch (error) { homebridge.toast.error(error.message, 'Configurazione non riuscita'); }
+    finally { homebridge.hideSpinner(); }
+  });
+})();
+</script>

@@ -402,7 +402,7 @@ def offer(ip, port, candidate, key, audio=False):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--listener', default='/opt/bticino-sniffer/listener.py')
+    p.add_argument('--listener', default=os.environ.get('BTICINO_LISTENER') or '/opt/bticino-sniffer/listener.py')
     p.add_argument('--candidates', required=True)
     p.add_argument('--candidate', type=int, required=True)
     p.add_argument('--prime-udp', action='store_true', help='test UDP return path using two STUN indications')
