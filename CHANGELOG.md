@@ -42,6 +42,12 @@ Home Assistant integration is installed from this repository through HACS.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (listener IPC, next release)
+
+- A client that stops waiting for an answer (for example the plugin while a
+  live view closes) no longer makes the listener print a `BrokenPipeError`
+  traceback; the answer is dropped silently.
+
 ### Fixed (plugin 0.9.5, Apple Home live view)
 
 - The Apple Home live view stopped showing video after the plugin moved to

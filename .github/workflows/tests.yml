@@ -26,16 +26,18 @@ jobs:
 
   homebridge:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The plugin's own FFmpeg (ffmpeg-for-homebridge), as in production; apt mirrors stalled.
+      - name: Install plugin dependencies
+        run: npm ci --prefix homebridge-bticino-hometouch
       - run: npm test --prefix homebridge-bticino-hometouch
         env:
-          BTICINO_TEST_FFMPEG: ffmpeg
+          BTICINO_TEST_FFMPEG: ${{ github.workspace }}/homebridge-bticino-hometouch/node_modules/ffmpeg-for-homebridge/ffmpeg
 
   home-assistant:
     runs-on: ubuntu-latest
