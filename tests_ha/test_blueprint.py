@@ -77,7 +77,8 @@ async def test_ring_blueprint_runs_notifies_and_opens(hass):
     assert data["tag"].startswith("BTICINO_")
     assert data["push"] == {"sound": "default", "interruption-level": "time-sensitive"}
     assert data["url"] == "/videocitofono-live/live"
-    assert [a["title"] for a in data["actions"]] == ["Apri scala"]
-    hass.bus.async_fire("mobile_app_notification_action", {"action": data["actions"][0]["action"]})
+    assert [a["title"] for a in data["actions"]] == ["Rispondi", "Apri scala"]
+    assert data["actions"][0] == {"action": "URI", "title": "Rispondi", "uri": "/videocitofono-live/live"}
+    hass.bus.async_fire("mobile_app_notification_action", {"action": data["actions"][1]["action"]})
     await hass.async_block_till_done()
     assert [c.data["entity_id"] for c in presses] == [["button.videocitofono_apri_scala"]]

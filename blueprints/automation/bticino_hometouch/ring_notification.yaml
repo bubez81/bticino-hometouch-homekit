@@ -84,10 +84,18 @@ blueprint:
         tap_url:
           name: Page opened by tapping the notification
           description: >
-            Home Assistant path, for example a dashboard view with the camera
-            ("/videocitofono-live/live"). The iOS app opens only paths, not
-            entity dialogs.
+            Home Assistant path, for example a dashboard view with the
+            BTicino HOMETOUCH card ("/videocitofono-live/live"). The iOS app
+            opens only paths, not entity dialogs.
           default: /lovelace
+          selector:
+            text: {}
+        answer_title:
+          name: Answer button
+          description: >
+            Label of the notification button that opens the page above, where
+            the card answers the call. Empty: no button.
+          default: Rispondi
           selector:
             text: {}
 
@@ -103,6 +111,7 @@ variables:
   message: !input message
   sound: !input sound
   tap_url: !input tap_url
+  answer_title: !input answer_title
   # Unique per run: ties the notification buttons to this ring.
   prefix: "BTICINO_{{ now().timestamp() | int }}"
 
@@ -153,6 +162,9 @@ actions:
                 interruption-level: time-sensitive
               actions: >
                 {% set ns = namespace(items=[]) %}
+                {% if answer_title %}
+                  {% set ns.items = [{'action': 'URI', 'title': answer_title, 'uri': tap_url}] %}
+                {% endif %}
                 {% for button in offered %}
                   {% set ns.items = ns.items + [{'action': prefix ~ '_' ~ loop.index0,
                      'title': state_attr(button, 'friendly_name') or button}] %}

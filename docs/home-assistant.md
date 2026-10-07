@@ -108,7 +108,8 @@ https://github.com/bubez81/bticino-hometouch-homekit/blob/main/blueprints/automa
 ```
 
 For **Page opened by tapping the notification** choose a dashboard view with
-the card: tapping the notification then lets you answer.
+the card: tapping the notification, or its **Rispondi** button, opens the card,
+where you answer.
 
 Create an automation from it and choose the doorbell event, the last ring
 entrance sensor, the camera, the opening buttons and the phones to notify
