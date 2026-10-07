@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { ListenerSupervisor } = require('./supervisor');
 const { addEntranceLocks, normalizeEntrances } = require('./entrance-locks');
+const { PluginLog, teeLogger } = require('./plugin-log');
 const managers = new WeakMap();
 const cameraKey = config => JSON.stringify([config.ipcSocket || '/tmp/bticino-hometouch.sock', config.name || 'BTicino HOMETOUCH']);
 
@@ -37,10 +38,13 @@ function bundledFfmpeg() {
  */
 class BTicinoPlatform {
   constructor(log, config, api) {
-    this.log = log;
     this.config = config || {};
     this.api = api;
     const storage = this.config.storagePath || path.join(api.user.storagePath(), 'bticino-hometouch');
+    // Everything this plugin logs also goes to its own rotated file, for support.
+    fs.mkdirSync(storage, {recursive: true, mode: 0o700});
+    this.log = log = teeLogger(log, new PluginLog(path.join(storage, 'plugin.log')));
+    log.info(`BTicino HOMETOUCH ${require('./package.json').version} avviato`);
     const ffmpeg = this.config.ffmpegPath || bundledFfmpeg() || 'ffmpeg';
     const entrances = normalizeEntrances(this.config.entrances);
     // The settings page creates storage/python (with pyzipper); otherwise the system python3.

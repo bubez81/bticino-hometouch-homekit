@@ -41,6 +41,22 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (plugin 0.9.3)
+
+- The plugin keeps its own log, `bticino-hometouch/plugin.log` (rotated at
+  1 MB, three files), with the same lines it writes to the Homebridge log.
+- **Scarica diagnostica** in the plugin settings: one anonymised text file with
+  versions, FFmpeg codecs, setup and configuration summary, checks (gateway
+  reachable, listener, current call, entrances) and the recent plugin and
+  camera-call logs. Addresses, SIP accounts and domain, e-mail addresses, MAC
+  addresses, setup codes, keys, tokens and home-folder user names are replaced
+  by placeholders. A GitHub issue form asks for this file.
+
+### Fixed (plugin 0.9.3)
+
+- *Prova apertura* used the default listener socket even when `ipcSocket` was
+  configured.
+
 ### Changed (plugin 0.9.2)
 
 - The project banner, badges and the support section are back in the

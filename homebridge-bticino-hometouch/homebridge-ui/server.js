@@ -8,6 +8,7 @@ const {execFile} = require('node:child_process');
 const {HomebridgePluginUiServer, RequestError} = require('@homebridge/plugin-ui-utils');
 const {listenerDirectory} = require('../supervisor');
 const {normalizeEntrances} = require('../entrance-locks');
+const {buildDiagnostics} = require('../diagnostics');
 const ipc = require('../ipc');
 
 function run(file, args, options) {
@@ -23,6 +24,7 @@ class UiServer extends HomebridgePluginUiServer {
     this.onRequest('/plants', body => this.helper('plants', [], body));
     this.onRequest('/apply', body => this.helper('apply', ['--plant-id', String(body?.plantId || ''), '--storage', this.storage], body));
     this.onRequest('/test-open', body => this.testOpen(body));
+    this.onRequest('/diagnostics', body => this.diagnostics(body));
     this.ready();
   }
 
@@ -33,10 +35,24 @@ class UiServer extends HomebridgePluginUiServer {
     const entrance = entrances.find(e => e.name === String(body?.name || '').trim());
     if (!entrance) throw new RequestError('Ingresso non trovato: salvare la configurazione e riavviare Homebridge', {});
     let result;
-    try { result = await ipc.request(path.join(this.storage, 'hometouch.sock'), 'open_entrance', {entrance: entrance.id}, 6000); }
+    const socket = body?.ipcSocket || path.join(this.storage, 'hometouch.sock');
+    try { result = await ipc.request(socket, 'open_entrance', {entrance: entrance.id}, 6000); }
     catch (_) { throw new RequestError('Il plugin non è in esecuzione: salvare e riavviare Homebridge', {}); }
     if (!result?.ok) throw new RequestError(`Apertura non riuscita (${result?.error || 'errore'}); se l'ingresso è nuovo, riavviare Homebridge`, {});
     return {ok: true};
+  }
+
+  // Anonymised support file: versions, checks, configuration summary, logs.
+  async diagnostics(body) {
+    const config = body?.config || {};
+    const storage = config.storagePath || this.storage;
+    let ffmpeg = config.ffmpegPath;
+    if (!ffmpeg) { try { ffmpeg = require('ffmpeg-for-homebridge'); } catch (_) { ffmpeg = null; } }
+    const venv = path.join(storage, 'python', 'bin', 'python3');
+    const python = config.pythonPath || (fs.existsSync(venv) ? venv : 'python3');
+    const text = await buildDiagnostics({storage, config, ffmpeg, python,
+      versions: {plugin: require('../package.json').version, ui: this.homebridgeUiVersion}});
+    return {filename: `bticino-hometouch-diagnostica-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`, text};
   }
 
   status() {

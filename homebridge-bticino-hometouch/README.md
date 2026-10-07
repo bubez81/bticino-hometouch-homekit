@@ -77,6 +77,12 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
 
 ## Troubleshooting
 
+**Something does not work?** Homebridge → Plugins → BTicino HOMETOUCH →
+Settings → **Scarica diagnostica**, then
+[open an issue](https://github.com/bubez81/bticino-hometouch-homekit/issues/new/choose)
+and attach the file. It contains versions, checks and the plugin's recent log,
+with addresses, accounts and keys replaced by placeholders.
+
 | Symptom | What to do |
 | --- | --- |
 | "not set up yet" in the log | Complete step 2 |
