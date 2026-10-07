@@ -1,3 +1,6 @@
+<div class="mb-3 text-end">
+  <button class="btn btn-outline-secondary btn-sm" id="diagnostics">Scarica diagnostica</button>
+</div>
 <div id="setup" style="display:none">
   <p class="mb-2"><strong>Primo collegamento all'impianto BTicino HOMETOUCH</strong></p>
   <p class="text-muted small">
@@ -36,13 +39,27 @@
       button.textContent = `Prova apertura: ${entrance.name}`;
       button.addEventListener('click', async () => {
         if (!confirm(`Aprire davvero "${entrance.name}"?`)) return;
-        try { await homebridge.request('/test-open', {name: entrance.name, entrances: config.entrances});
+        try { await homebridge.request('/test-open', {name: entrance.name, entrances: config.entrances, ipcSocket: config.ipcSocket});
               homebridge.toast.success(`Comando inviato a ${entrance.name}`); }
         catch (error) { homebridge.toast.error(error.message, 'Prova non riuscita'); }
       });
       box.appendChild(button);
     }
   };
+  // Anonymised file to attach to a GitHub issue.
+  document.getElementById('diagnostics').addEventListener('click', async () => {
+    homebridge.showSpinner();
+    try {
+      const config = (await homebridge.getPluginConfig())[0] || {};
+      const {filename, text} = await homebridge.request('/diagnostics', {config});
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([text], {type: 'text/plain'}));
+      link.download = filename;
+      document.body.appendChild(link); link.click(); link.remove();
+      homebridge.toast.success('File salvato: allegalo alla segnalazione su GitHub', 'Diagnostica');
+    } catch (error) { homebridge.toast.error(error.message, 'Diagnostica non riuscita'); }
+    finally { homebridge.hideSpinner(); }
+  });
   const status = await homebridge.request('/status');
   if (status.configured) { show('done', true); await testButtons(); homebridge.showSchemaForm(); return; }
   show('setup', true);

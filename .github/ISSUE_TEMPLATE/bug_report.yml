@@ -1,0 +1,51 @@
+name: Problem with the plugin
+description: Something does not work with homebridge-bticino-hometouch
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The diagnostics file is the most useful part:
+        Homebridge → Plugins → BTicino HOMETOUCH → Settings → **Scarica diagnostica**.
+        It is anonymised (addresses, accounts and keys are replaced), but please
+        read it before attaching it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: e.g. "No notification when someone rings; the HomePods chime."
+    validations:
+      required: true
+  - type: input
+    id: when
+    attributes:
+      label: When did it happen? (date and time)
+      description: Helps to find the right lines in the logs.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Setup / sign-in
+        - Ring notification
+        - Live view (video)
+        - Sound or talking
+        - Gates (locks)
+        - Home Assistant connection
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics file
+      description: Drag the downloaded `bticino-hometouch-diagnostica-….txt` here.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Homebridge host
+      placeholder: e.g. Raspberry Pi 4 with the Homebridge image, Mac mini, Docker

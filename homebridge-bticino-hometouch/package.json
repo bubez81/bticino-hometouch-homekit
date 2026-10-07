@@ -1,7 +1,7 @@
 {
   "name": "homebridge-bticino-hometouch",
   "displayName": "BTicino HOMETOUCH",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "BTicino HOMETOUCH video door entry for Apple Home: notifications, live view with two-way audio, entrance locks. One plugin, no extra services.",
   "author": "bubez81",
   "license": "MIT",
@@ -28,13 +28,15 @@
     "call-unlock.js",
     "supervisor.js",
     "entrance-locks.js",
+    "plugin-log.js",
+    "diagnostics.js",
     "config.schema.json",
     "listener/",
     "README.md",
     "homebridge-ui/"
   ],
   "scripts": {
-    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js && node test-platform.js && node test-supervisor.js",
+    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js && node test-platform.js && node test-supervisor.js && node test-diagnostics.js",
     "test:media": "node test-transport.js && node test-srtp-roundtrip.js && node test-two-way-audio.js && node test-live-audio.js",
     "prepack": "node bundle-listener.js"
   },
