@@ -41,6 +41,12 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Changed (plugin 0.9.2)
+
+- The project banner, badges and the support section are back in the
+  repository README and also shown on the plugin's npm page; the package lists
+  its funding links. The empty `bin` field was removed from `package.json`.
+
 ### Fixed (plugin 0.9.1)
 
 - A listener that stopped with an error left its IPC socket behind, and every

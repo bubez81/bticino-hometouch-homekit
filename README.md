@@ -1,4 +1,14 @@
+![BTicino HOMETOUCH HomeKit bridge — privacy-first local intercom integration](assets/project-banner.png)
+
 # BTicino HOMETOUCH for Apple Home
+
+[![Tests](https://github.com/bubez81/bticino-hometouch-homekit/actions/workflows/tests.yml/badge.svg)](https://github.com/bubez81/bticino-hometouch-homekit/actions/workflows/tests.yml)
+[![npm](https://img.shields.io/npm/v/homebridge-bticino-hometouch?logo=npm&color=CB3837)](https://www.npmjs.com/package/homebridge-bticino-hometouch)
+[![Homebridge](https://img.shields.io/badge/Homebridge-1.6%20%7C%202.x-491F59?logo=homebridge&logoColor=white)](https://homebridge.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/bubez81/bticino-hometouch-homekit/blob/main/LICENSE)
+[![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](https://github.com/bubez81/bticino-hometouch-homekit)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/bubez81)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-support-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/bubez81)
 
 Use a BTicino **HOMETOUCH** video door entry system in Apple Home through one
 Homebridge plugin: ring notifications, live view with two-way audio, and the
@@ -40,6 +50,14 @@ cd homebridge-bticino-hometouch && npm install && npm test && npm run test:media
 
 `npm pack` bundles `src/` and the camera probe into the package
 (`bundle-listener.js`).
+
+## Support the project
+
+If this project is useful to you, you can support its continued development,
+testing and documentation through
+[GitHub Sponsors](https://github.com/sponsors/bubez81) or
+[Buy Me a Coffee](https://buymeacoffee.com/bubez81). Contributions are
+optional and do not include rewards or support services.
 
 ## Security and license
 
