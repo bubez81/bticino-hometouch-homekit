@@ -105,17 +105,23 @@ class StreamManager {
         if (!Number.isInteger(n)||n<1||n>65535) throw Error('Invalid video parameters');
       }
       this.log.info(`HomeKit negotiated video ${v.width}x${v.height} fps=${v.fps} bitrate=${v.max_bit_rate} pt=${v.pt} profile=${v.profile} level=${v.level}`);
-      const outputWidth = process.env.BTICINO_MAX_WIDTH === '640' ? Math.min(v.width,640) : v.width;
-      const outputHeight = Math.max(2,Math.round(v.height*outputWidth/v.width/2)*2);
-      this.log.info(`HomeKit encoded resolution ${outputWidth}x${outputHeight}`);
-      const args=['-hide_banner','-loglevel','error','-nostdin','-probesize','32768','-analyzeduration','0','-use_wallclock_as_timestamps','1','-f','mpegts',
+      // The recipe of homebridge-plugin-utils (homebridge-unifi-protect), proven with the same
+      // ffmpeg-for-homebridge build: never upscale (keep the camera's aspect ratio, at most the
+      // requested height), no B-frames, rate control with buffer, a keyframe every 5 s, corrupt
+      // input packets dropped, RTP packets of at most 1200 bytes flushed one by one.
+      const maxHeight = process.env.BTICINO_MAX_WIDTH === '640' ? Math.min(v.height, 360) : v.height;
+      const bitrate = v.max_bit_rate;
+      this.log.info(`HomeKit encoded height at most ${maxHeight} (camera aspect ratio kept)`);
+      const args=['-hide_banner','-loglevel','error','-nostdin','-fflags','+discardcorrupt','-err_detect','ignore_err','-flags','low_delay',
+        '-probesize','32768','-analyzeduration','0','-use_wallclock_as_timestamps','1','-f','mpegts',
         '-i',`udp://127.0.0.1:${port}?fifo_size=1024&overrun_nonfatal=1`,
-        '-an','-map','0:v:0','-vf',`setpts=PTS-STARTPTS,fps=${v.fps},realtime,scale=${outputWidth}:${outputHeight},setsar=1`,'-r',String(v.fps),'-c:v','libx264','-preset','ultrafast',
-        '-tune','zerolatency','-pix_fmt','yuv420p','-profile:v',['baseline','main','high'][v.profile]||'baseline',
-        '-level:v',['3.1','3.2','4.0'][v.level]||'3.1','-b:v',`${v.max_bit_rate}k`,'-g',String(v.fps*2),
-        '-payload_type',String(v.pt),'-ssrc',String(s.ssrc),'-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80',
+        '-an','-map','0:v:0','-vf',`setpts=PTS-STARTPTS,fps=${v.fps},scale=-2:min(ih\\,${maxHeight}),format=yuv420p,setsar=1`,
+        '-c:v','libx264','-preset','veryfast','-tune','zerolatency','-bf','0',
+        '-profile:v',['baseline','main','high'][v.profile]||'baseline','-level:v',['3.1','3.2','4.0'][v.level]||'3.1',
+        '-b:v',`${bitrate}k`,'-maxrate',`${bitrate+64}k`,'-bufsize',`${2*bitrate}k`,'-g',String(v.fps*5),
+        '-payload_type',String(v.pt),'-ssrc',String(s.ssrc),'-flush_packets','1','-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80',
         '-srtp_out_params',Buffer.concat([Buffer.from(s.req.video.srtp_key||[]),Buffer.from(s.req.video.srtp_salt||[])]).toString('base64'),
-        `srtp://127.0.0.1:${s.forwarder.address().port}?rtcpport=${s.rtcpForwarder.address().port}&pkt_size=${Math.min(v.mtu,1316)}`];
+        `srtp://127.0.0.1:${s.forwarder.address().port}?rtcpport=${s.rtcpForwarder.address().port}&pkt_size=${Math.min(v.mtu,1200)}`];
       args.unshift('-progress', 'pipe:1', '-stats_period', '1');
       if(s.incoming) {
         const start=args.indexOf('-probesize'),end=args.indexOf('-an');

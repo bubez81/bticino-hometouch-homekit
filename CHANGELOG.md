@@ -42,6 +42,24 @@ Home Assistant integration is installed from this repository through HACS.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (plugin 0.9.5, Apple Home live view)
+
+- The Apple Home live view stopped showing video after the plugin moved to
+  the FFmpeg of ffmpeg-for-homebridge (8.0): packets reached the iPhone and
+  iPad, which kept asking for a keyframe and closed the view after about 30 s.
+  The encoder now follows the recipe of homebridge-plugin-utils (used by
+  homebridge-unifi-protect with the same FFmpeg build): no upscaling (camera
+  aspect ratio, at most the requested height), no B-frames, `veryfast`, rate
+  control with `maxrate`/`bufsize`, a keyframe every 5 s, corrupt input packets
+  dropped, RTP packets of at most 1200 bytes flushed one by one. Verified on
+  the test installation: the live view shows again, first video about 5 s
+  after the request (5.8–7.4 s before).
+
+### Release
+
+- Plugin 0.9.5 and Home Assistant integration 0.2.1 (keyframe request on
+  camera calls, latest-call diagnostics).
+
 ### Changed (camera calls)
 
 - On-demand camera calls ask the camera for a keyframe (SRTCP PLI) as soon as
