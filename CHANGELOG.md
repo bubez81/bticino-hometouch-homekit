@@ -41,6 +41,23 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (listener, plugin 0.9.4)
+
+- When only the cloud SIP server is configured, the listener learns the
+  gateway's local address from the first ring (media and Contact addresses of
+  the INVITE, home-network ranges only), checks it with a TLS connection whose
+  certificate must be signed by the BTicino CA and name the plant's SIP
+  domain, saves it in `runtime/gateway-address.json` and connects to it from
+  then on; the camera probe uses it too. Verified against the real gateway
+  (accepted) and another address (refused); learning from a real ring through
+  the cloud is not yet observed.
+- Plugin 0.9.4 bundles the setup and SIP fixes of this day.
+
+### Changed (Home Assistant integration 0.2.0)
+
+- Options reload the integration through `OptionsFlowWithReload` (the update
+  listener is deprecated for Home Assistant 2026.12).
+
 ### Added (Home Assistant integration 0.2.0, local gateway)
 
 - Option *Gateway address (local network)*: the listener connects to the

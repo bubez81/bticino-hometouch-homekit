@@ -102,7 +102,7 @@
           "gateway": "Indirizzo del gateway (rete locale)"
         },
         "data_description": {
-          "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50. Serve per il live: il server cloud rifiuta le chiamate alla telecamera. Vuoto: server cloud."
+          "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50; serve per il live, perché il server cloud rifiuta le chiamate alla telecamera. Vuoto: trovato in automatico alla prossima suonata."
         }
       }
     },
