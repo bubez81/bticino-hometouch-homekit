@@ -6,6 +6,7 @@ DEFAULT_PORT = 8790
 STORAGE_DIR = "bticino_hometouch"
 CONF_STORAGE = "storage"
 CONF_ENTRANCES = "entrances"
+CONF_GATEWAY = "gateway"
 MANUFACTURER = "BTicino"
 MODEL = "HOMETOUCH (via listener)"
 

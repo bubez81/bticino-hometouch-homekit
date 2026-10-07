@@ -19,7 +19,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ApiError, AuthError, HometouchApi
-from .const import CONF_ENTRANCES, CONF_STORAGE, DOMAIN
+from .const import CONF_ENTRANCES, CONF_GATEWAY, CONF_STORAGE, DOMAIN
 from .live import LiveSource, LiveView
 from .hub import HometouchHub
 from .runtime import ListenerRuntime, SetupError, ensure_ffmpeg
@@ -50,7 +50,7 @@ async def _start_runtime(hass: HomeAssistant, entry: HometouchConfigEntry) -> Li
     except (SetupError, OSError) as err:
         raise ConfigEntryNotReady(f"FFmpeg: {err}") from err
     runtime = ListenerRuntime(storage, ffmpeg, entrance_ids(entry.options.get(CONF_ENTRANCES, [])),
-                              entry.data[CONF_PORT])
+                              entry.data[CONF_PORT], gateway=entry.options.get(CONF_GATEWAY) or None)
     await runtime.start()
     return runtime
 

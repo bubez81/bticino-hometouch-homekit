@@ -41,6 +41,10 @@ as one more phone of the system and gives you:
    each gate, for example `Scala=20, Esterno=21`. The entrance panel's own lock
    is usually `20`, a second one `21`. Each entrance gets an *Open …* button.
 
+4. *Configure* → **Gateway address (local network)**: the IP address of the
+   HOMETOUCH gateway at home (see your router's device list). The live video
+   needs it: the cloud server refuses camera calls.
+
 Private files (certificate, key, logs, pictures) are kept in
 `/config/bticino_hometouch` and are part of Home Assistant backups.
 
