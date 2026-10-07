@@ -26,6 +26,14 @@
         "data": {
           "token": "API token"
         }
+      },
+      "reconfigure": {
+        "title": "Update credentials",
+        "description": "Sign in again with the dedicated Door Entry account to re-read this phone's credentials from the cloud. Nothing new is created.{error}",
+        "data": {
+          "email": "E-mail",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -38,7 +46,9 @@
       "single_instance_allowed": "Already configured",
       "already_configured": "This system is already configured",
       "setup_failed": "Setup failed: {error}",
-      "reauth_successful": "Token updated"
+      "reauth_successful": "Token updated",
+      "credentials_refreshed": "Credentials updated.",
+      "not_standalone": "This entry uses an external listener."
     }
   },
   "entity": {

@@ -150,3 +150,28 @@ async def test_buttons_of_removed_entrances_are_cleaned_up(hass, listener):
     assert buttons() == [f"{entry.entry_id}_open_esterno", f"{entry.entry_id}_open_scala"]
     assert registry.async_get(old.entity_id) is None
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_refreshes_the_phone_credentials(hass, listener, tmp_path):
+    from unittest.mock import AsyncMock, patch
+    calls = []
+
+    async def run_setup(command, email, password, *args):
+        calls.append((command, email, password, args))
+        return {"ok": True, "updated": ["Username"]}
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"storage": str(tmp_path), CONF_HOST: "127.0.0.1",
+                                                 CONF_PORT: listener.port, CONF_TOKEN: TOKEN})
+    entry.add_to_hass(hass)
+    with patch("custom_components.bticino_hometouch._start_runtime", return_value=AsyncMock()), \
+         patch("custom_components.bticino_hometouch.config_flow.run_setup", run_setup):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        form = await entry.start_reconfigure_flow(hass)
+        assert form["step_id"] == "reconfigure"
+        done = await hass.config_entries.flow.async_configure(
+            form["flow_id"], {"email": "bridge@example.com", "password": "secret"})
+        await hass.async_block_till_done()
+    assert done["type"] is FlowResultType.ABORT and done["reason"] == "credentials_refreshed"
+    assert calls == [("refresh", "bridge@example.com", "secret", ("--storage", str(tmp_path)))]
+    await hass.config_entries.async_unload(entry.entry_id)

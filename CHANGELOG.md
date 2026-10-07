@@ -41,6 +41,17 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (SIP authentication)
+
+- Camera calls from a newly created phone were refused with 407 twice: when
+  the SIP server asks for a password, the user name must be the endpoint's
+  `Username` from the cloud, not the account's user part. The onboarding now
+  saves it with the credentials and the listener and the camera probe use it
+  (older files fall back to the previous behaviour).
+- `bticino_plugin_setup.py refresh` re-reads the bridge's endpoint from the
+  cloud and updates the saved credentials without creating anything; in Home
+  Assistant it is the integration's *Reconfigure* step.
+
 ### Added (Home Assistant integration 0.2.0, diagnostics)
 
 - *Download diagnostics* describes the phone's private files without their

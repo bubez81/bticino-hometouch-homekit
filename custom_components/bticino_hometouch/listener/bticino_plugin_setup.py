@@ -4,6 +4,8 @@
   plants                         list the plants the dedicated account can see
   apply --plant-id ID --storage  create the bridge's SIP endpoint, write the
                                  private files and suggest the first entrance
+  refresh --storage              re-read the bridge's endpoint from the cloud and
+                                 update its saved credentials (creates nothing)
 
 The email and password come from BTICINO_DOORENTRY_EMAIL and
 BTICINO_DOORENTRY_PASSWORD and are never written. Progress goes to stderr; the
@@ -89,9 +91,39 @@ def apply_command(args):
             "entrances": suggested_entrances(configuration), "camera": bool(candidates)}
 
 
+def refresh_command(args):
+    """Bring the saved credentials up to date with the cloud's record of the same endpoint."""
+    storage = Path(args.storage).resolve()
+    try:
+        onboarding = json.loads((storage / "onboarding.json").read_text(encoding="utf-8"))
+        credentials_file = Path(onboarding["credentials_file"])
+        if not credentials_file.is_absolute():
+            credentials_file = storage / credentials_file
+        credentials = json.loads(credentials_file.read_text(encoding="utf-8"))
+        selection = json.loads((credentials_file.parent / "selection.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError) as error:
+        raise onboard.OnboardingError("Configurazione del bridge non trovata") from error
+    client, _ = session(args.portal)
+    plant_id = onboard.validate_identifier(selection.get("PlantId"), "PlantId")
+    gateway_id = onboard.validate_identifier(selection.get("GatewayId"), "GatewayId")
+    matches = [a for a in client.sip_accounts(plant_id, gateway_id)
+               if a.get("SipAccount") == credentials.get("SipAccount")]
+    if len(matches) != 1:
+        raise onboard.OnboardingError("Il telefono del bridge non è più nell'elenco dell'impianto")
+    updated = []
+    for key in ("Username", "SipPassword"):
+        value = matches[0].get(key)
+        if isinstance(value, str) and value.strip() and credentials.get(key) != value.strip():
+            credentials[key] = value.strip()
+            updated.append(key)
+    if updated:
+        onboard.atomic_private_json(credentials_file, credentials)
+    return {"ok": True, "updated": updated}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["plants", "apply"])
+    parser.add_argument("command", choices=["plants", "apply", "refresh"])
     parser.add_argument("--portal", default=onboard.DEFAULT_PORTAL)
     parser.add_argument("--plant-id")
     parser.add_argument("--storage")
@@ -99,9 +131,9 @@ def main(argv=None):
     parser.add_argument("--device-name", default=DEVICE_NAME, help="name of the phone shown in the Door Entry app")
     args = parser.parse_args(argv)
     try:
-        if args.command == "apply" and not args.storage:
+        if args.command in ("apply", "refresh") and not args.storage:
             raise onboard.OnboardingError("--storage mancante")
-        result = plants_command(args) if args.command == "plants" else apply_command(args)
+        result = {"plants": plants_command, "apply": apply_command, "refresh": refresh_command}[args.command](args)
     except onboard.OnboardingError as error:
         result = {"ok": False, "error": str(error)}
     except Exception as error:  # report, never print secrets or tracebacks with values

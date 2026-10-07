@@ -547,7 +547,7 @@ def main():
                     print(challenge_summary(lib, code, headers, raw), flush=True)
                 if code in (401, 407) and cseq == 1 and not cancelled:
                     challenge = lib.parse_digest_challenge(headers.get('www-authenticate') or headers.get('proxy-authenticate'))
-                    auth = lib.digest_authorization(username=client.username, password=client.password,
+                    auth = lib.digest_authorization(username=getattr(client, 'auth_username', client.username), password=client.password,
                         method='INVITE', uri=uri, challenge=challenge)
                     cseq += 1
                     branch = 'z9hG4bK'+uuid.uuid4().hex

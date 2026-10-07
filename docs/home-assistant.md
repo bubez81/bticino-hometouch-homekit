@@ -77,6 +77,10 @@ in `/config/bticino_hometouch/camera-calls.log`. When reporting a problem,
 with the time it happened and the relevant log lines; remove addresses and
 account names first.
 
+If camera calls fail with an authentication error in the log, use
+*Reconfigure* on the integration: sign in with the dedicated account and the
+phone's credentials are re-read from the cloud (nothing new is created).
+
 ## Tests
 
 ```sh

@@ -653,12 +653,16 @@ def provision(client: EliotClient, email: str, plant: dict[str, Any], plant_id: 
     csr_path.unlink(missing_ok=True)
 
     credentials = output / "sip_credentials.json"
-    atomic_private_json(credentials, {
+    credentials_data = {
         "SipAccount": sip_account,
         "SipPassword": sip_password,
         "GatewayId": gateway_id,
         "IdDevice": device_id,
-    })
+    }
+    # The digest user name differs from the account's user part.
+    if isinstance(account.get("Username"), str) and account["Username"].strip():
+        credentials_data["Username"] = account["Username"].strip()
+    atomic_private_json(credentials, credentials_data)
     atomic_private_json(output / "selection.json", {
         "PlantId": plant_id,
         "GatewayId": gateway_id,
