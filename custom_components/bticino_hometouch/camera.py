@@ -28,6 +28,11 @@ class HometouchCamera(HometouchEntity, Camera):
             # Home Assistant's built-in go2rtc turns this RTSP source into WebRTC.
             self._attr_supported_features = CameraEntityFeature.STREAM
 
+    @property
+    def extra_state_attributes(self) -> dict[str, str] | None:
+        # Read by the BTicino HOMETOUCH dashboard card to open the talk channel.
+        return {"talk_url": self.hub.talk_url} if self.hub.talk_url else None
+
     async def stream_source(self) -> str | None:
         return self._live_url
 

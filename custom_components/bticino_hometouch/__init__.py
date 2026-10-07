@@ -8,6 +8,7 @@ older versions connect to an external listener instead.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 import unicodedata
 from pathlib import Path
@@ -21,6 +22,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import ApiError, AuthError, HometouchApi
 from .const import CONF_ENTRANCES, CONF_GATEWAY, CONF_STORAGE, DOMAIN
 from .live import LiveSource, LiveView
+from .talk import URL as TALK_URL, TalkView
 from .hub import HometouchHub
 from .runtime import ListenerRuntime, SetupError, ensure_ffmpeg
 
@@ -53,6 +55,22 @@ async def _start_runtime(hass: HomeAssistant, entry: HometouchConfigEntry) -> Li
                               entry.data[CONF_PORT], gateway=entry.options.get(CONF_GATEWAY) or None)
     await runtime.start()
     return runtime
+
+
+CARD_URL = "/bticino_hometouch/bticino-hometouch-card.js"
+
+
+async def _register_card(hass: HomeAssistant) -> None:
+    """The dashboard card ships with the integration: no separate resource to add."""
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    path = Path(__file__).parent / "frontend" / "bticino-hometouch-card.js"
+    # The content hash makes browsers load a new card after an update.
+    version = await hass.async_add_executor_job(lambda: hashlib.sha256(path.read_bytes()).hexdigest()[:12])
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(path), cache_headers=False)])
+    if "frontend" in hass.config.components:
+        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry) -> bool:
@@ -89,9 +107,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry) ->
         sources = hass.data.setdefault(DOMAIN, {})
         if not sources.get("_view"):
             hass.http.register_view(LiveView())
+            hass.http.register_view(TalkView())
+            await _register_card(hass)
             sources["_view"] = True
         source = sources[entry.entry_id] = LiveSource(runtime.socket)
         hub.live_url = source.url(hass, entry.entry_id)
+        hub.talk_url = TALK_URL.format(entry_id=entry.entry_id)
 
         @callback
         def _forget_source() -> None:

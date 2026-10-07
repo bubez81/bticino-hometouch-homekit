@@ -4,7 +4,13 @@
   "codeowners": [
     "@bubez81"
   ],
+  "after_dependencies": [
+    "frontend"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "http"
+  ],
   "documentation": "https://github.com/bubez81/bticino-hometouch-homekit",
   "integration_type": "device",
   "iot_class": "local_push",
