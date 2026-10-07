@@ -41,6 +41,12 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (ring notification blueprint)
+
+- An **Answer** button (label configurable, default *Rispondi*, empty to
+  omit) opens the page of *Page opened by tapping the notification*, where
+  the dashboard card answers the call.
+
 ### Added (Home Assistant integration 0.2.0, talk)
 
 - Dashboard card `custom:bticino-hometouch-card`, served and registered by
