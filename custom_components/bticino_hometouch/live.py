@@ -1,9 +1,9 @@
 """Live video for Home Assistant's built-in go2rtc, without a separate go2rtc.
 
-The camera's stream source is a local HTTP URL served here. Each request
-relays the listener's MPEG-TS (H.264 with AAC audio) over loopback UDP:
-during a ring the call's own feed, otherwise an on-demand camera call that is
-closed again when the request ends. As in the go2rtc exec source of earlier
+The camera's stream source is a local HTTP URL served here. Its requests
+share one relay of the listener's MPEG-TS (H.264 with AAC audio) over
+loopback UDP: during a ring the call's own feed, otherwise an on-demand camera
+call that is closed again when the last request ends. As in the go2rtc exec source of earlier
 versions, a camera call is never retried: when the camera is busy, the
 previous call ended less than CALL_COOLDOWN seconds ago, or no video arrives
 within FIRST_VIDEO_TIMEOUT, the listener's local feed (latest snapshot) is
@@ -69,24 +69,63 @@ async def _open_udp(port: int):
     return transport, protocol
 
 
+CALL_LOG_NOISE = ("[h264 @", "[s16le @", "Last message repeated", "no frame!", "non-existing PPS")
+
+
+def last_call_lines(log_file: Path, limit: int = 20) -> list[str]:
+    """The latest camera call's lines from the listener's call log, without decoder noise."""
+    try:
+        lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()[-400:]
+    except OSError:
+        return []
+    start = max((i for i, line in enumerate(lines) if line.startswith("=== ")), default=0)
+    return [line for line in lines[start:] if line.strip() and not line.startswith(CALL_LOG_NOISE)][-limit:]
+
+
 class LiveSource:
-    """Per config entry: the listener socket and the last camera call's end."""
+    """Per config entry: one relay shared by all viewers, the last camera call's end.
+
+    go2rtc and Home Assistant may open the stream twice at the same time; the
+    second request joins the running relay instead of asking for a second
+    camera call, which the listener would refuse.
+    """
 
     def __init__(self, socket_path: Path) -> None:
         self.socket_path = socket_path
         self.secret = secrets.token_urlsafe(24)
         self.last_call_end = 0.0
+        self.viewers: set[asyncio.Queue] = set()
+        self.relay: asyncio.Task | None = None
 
     def url(self, hass: HomeAssistant, entry_id: str) -> str:
         port = hass.http.server_port if hass.http else 8123
         return f"http://127.0.0.1:{port}{URL.format(entry_id=entry_id)}?k={self.secret}"
 
     async def stream(self, request: web.Request) -> web.StreamResponse:
+        response = web.StreamResponse(headers={"Content-Type": "video/mp2t", "Cache-Control": "no-store"})
+        await response.prepare(request)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
+        self.viewers.add(queue)
+        if self.relay is None or self.relay.done():
+            self.relay = asyncio.create_task(self._relay(), name="bticino_hometouch live")
+        try:
+            while (data := await queue.get()) is not None:
+                await response.write(data)
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass  # the viewer left
+        finally:
+            self.viewers.discard(queue)
+        return response
+
+    def _send(self, data: bytes | None) -> None:
+        for queue in list(self.viewers):
+            if data is None or not queue.full():
+                queue.put_nowait(data)
+
+    async def _relay(self) -> None:
         session = f"ha-{secrets.token_hex(6)}"
         call_started = False
         transport = None
-        response = web.StreamResponse(headers={"Content-Type": "video/mp2t", "Cache-Control": "no-store"})
-        await response.prepare(request)
         try:
             try:
                 incoming = (await ipc_request(self.socket_path, {"command": "incoming_status"})).get("incoming")
@@ -114,31 +153,37 @@ class LiveSource:
             _LOGGER.debug("Live started (%s)", mode)
             started = time.monotonic()
             last = None
-            while True:
+            while self.viewers:
                 try:
                     data = await asyncio.wait_for(protocol.queue.get(), 0.5)
                 except asyncio.TimeoutError:
                     now = time.monotonic()
                     if last is None and mode == "on_demand" and now - started > FIRST_VIDEO_TIMEOUT:
-                        _LOGGER.info("Live: no video from the camera; showing the latest picture")
+                        call_started = False
                         await self._stop_call(session)
-                        call_started, mode = False, "local"
+                        lines = await asyncio.get_running_loop().run_in_executor(
+                            None, last_call_lines, self.socket_path.parent / "camera-calls.log")
+                        _LOGGER.warning("Live: no video from the camera; showing the latest picture. "
+                                        "Camera call log:\n%s", "\n".join(lines) or "(empty)")
+                        mode = "local"
                         transport.close()
                         transport, protocol = await _open_udp(LOCAL_FEED_PORT)
                         started = time.monotonic()
+                    elif last is None and mode != "on_demand" and now - started > FIRST_VIDEO_TIMEOUT:
+                        # No picture to repeat (nothing saved yet): end instead of hanging.
+                        _LOGGER.info("Live: no picture available yet")
+                        break
                     elif last is not None and now - last > STALL_TIMEOUT:
                         break
                     continue
                 last = time.monotonic()
-                await response.write(data)
-        except (ConnectionResetError, asyncio.CancelledError):
-            pass  # the viewer left
+                self._send(data)
         finally:
             if transport is not None:
                 transport.close()
             if call_started:
                 await self._stop_call(session)
-        return response
+            self._send(None)
 
     async def _stop_call(self, session: str) -> None:
         self.last_call_end = time.monotonic()

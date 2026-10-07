@@ -41,6 +41,15 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (Home Assistant integration 0.2.0, live)
+
+- Two requests opened at the same time (go2rtc and Home Assistant) share one
+  camera call; before, the second one was refused and stayed empty.
+- With no saved picture to fall back on, the live ends instead of loading
+  forever.
+- When a camera call brings no video, the latest call's lines from
+  `camera-calls.log` are written to the Home Assistant log.
+
 ### Fixed (Home Assistant integration 0.2.0, reload)
 
 - Changing the entrances failed to reload the integration ("failed unload"):
