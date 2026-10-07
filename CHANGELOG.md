@@ -42,6 +42,12 @@ Home Assistant integration is installed from this repository through HACS.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (Home Assistant diagnostics)
+
+- *Download diagnostics* includes the latest camera call's summary: SIP
+  status codes, packet counts and the bytes of speech sent to the panel
+  (`talk_bytes`), without keys or file paths.
+
 ### Added (ring notification blueprint)
 
 - An **Answer** button (label configurable, default *Rispondi*, empty to
