@@ -41,6 +41,14 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Changed (documentation)
+
+- The repository README presents both ways to use the system, Apple Home
+  (Homebridge plugin) and Home Assistant (HACS integration), with a comparison
+  and the Home Assistant steps in short; the Home Assistant guide covers
+  requirements, installation from HACS, the live view, the notification
+  blueprint, updating, removing and troubleshooting.
+
 ### Added (listener, plugin 0.9.4)
 
 - When only the cloud SIP server is configured, the listener learns the
