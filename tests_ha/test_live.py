@@ -14,6 +14,7 @@ from custom_components.bticino_hometouch.const import DOMAIN
 async def test_live_relays_the_camera_call_and_stops_it(hass, hass_client_no_auth, socket_enabled):
     assert await async_setup_component(hass, "http", {})
     requests = []
+    feeds = []
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     async def fake_ipc(path, request, timeout=12):
@@ -27,7 +28,7 @@ async def test_live_relays_the_camera_call_and_stops_it(hass, hass_client_no_aut
                 for _ in range(200):
                     sender.sendto(b"\x47" + b"\x00" * 187, ("127.0.0.1", port))
                     await asyncio.sleep(0.01)
-            hass.async_create_background_task(feed(), "fake camera")
+            feeds.append(hass.async_create_background_task(feed(), "fake camera"))
         return {"ok": True}
 
     path = Path("/tmp/unused.sock")
@@ -55,4 +56,7 @@ async def test_live_relays_the_camera_call_and_stops_it(hass, hass_client_no_aut
     # Right after a call, a new viewer gets the local feed, not another camera call.
     assert source.last_call_end > 0
     ipc_patch.stop()
+    for task in feeds:
+        task.cancel()
+    await asyncio.gather(*feeds, return_exceptions=True)
     sender.close()
