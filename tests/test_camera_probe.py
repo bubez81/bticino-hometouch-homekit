@@ -49,6 +49,17 @@ class ProbeTests(unittest.TestCase):
         self.assertNotIn('PRIVATE', result)
         self.assertNotIn('192.0.2.1', result)
 
+    def test_challenge_summary_names_the_challenger_without_identifiers(self):
+        raw = (b'SIP/2.0 407 Proxy Authentication Required\r\nServer: Flexisip/2.3 (sofia-sip)\r\n'
+               b'Proxy-Authenticate: Digest realm="123.bs.iotleg.com", nonce="secret-nonce", algorithm=MD5\r\n\r\n')
+        lib = SimpleNamespace(DOMAIN='123.bs.iotleg.com',
+                              parse_digest_challenge=lambda v: dict(realm='123.bs.iotleg.com', nonce='secret-nonce', algorithm='MD5'))
+        line = probe.challenge_summary(lib, 407, {'proxy-authenticate': 'Digest ...'}, raw)
+        self.assertIn('status=407 realm=dominio_impianto algorithm=MD5', line)
+        self.assertIn('server=Flexisip/2.3 sofia-sip', line)
+        self.assertNotIn('123', line)
+        self.assertNotIn('secret-nonce', line)
+
     def test_offer_rejects_lock_and_header_injection(self):
         for row in ({'cid': '10060', 'devaddr': '200'},
                     {'cid': '10050', 'devaddr': '2\r\nBAD'}):
