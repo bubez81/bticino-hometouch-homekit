@@ -63,7 +63,9 @@ class PluginSetupTests(unittest.TestCase):
             self.assertEqual(result["entrances"], [{"name": "Ingresso", "address": "20"}])
             self.assertTrue(result["camera"])
             storage = Path(tmp)
-            self.assertEqual(json.loads((storage / "onboarding.json").read_text())["sip_domain"], "gw.example")
+            onboarding = json.loads((storage / "onboarding.json").read_text())
+            self.assertEqual(onboarding["sip_domain"], "gw.example")
+            self.assertEqual(onboarding["credentials_file"], "private/sip/c.json")
             self.assertEqual((storage / "onboarding.json").stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads((storage / "camera-candidates.json").read_text())["candidates"][0]["devaddr"], "20")
             # A second setup must not overwrite the bridge's identity.

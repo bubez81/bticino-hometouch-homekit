@@ -71,6 +71,7 @@ require('./index')(api);
   assert.equal(fs.statSync(path.join(storage, 'listener.json')).mode & 0o777, 0o600);
   assert.equal(config.base_dir, storage);
   assert.equal(config.sip_server, '192.0.2.10');
+  assert.equal(config.credentials_file, path.join(storage, 'private/sip/credentials.json'));
   assert.equal(config.ffmpeg, '/opt/ffmpeg');
   assert.equal(config.audio_ffmpeg, '/opt/ffmpeg');
   assert.equal(config.incoming_audio, true);

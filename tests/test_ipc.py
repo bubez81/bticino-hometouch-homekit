@@ -92,3 +92,19 @@ class IpcTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleSocketTests(unittest.TestCase):
+    def test_removes_dead_socket_and_refuses_a_live_one(self):
+        import socket
+        directory = tempfile.mkdtemp(dir='/tmp')
+        path = Path(directory) / 's'
+        dead = socket.socket(socket.AF_UNIX); dead.bind(str(path)); dead.close()   # file left behind
+        bticino_ipc.remove_stale_socket(path)
+        self.assertFalse(path.exists())
+        live = socket.socket(socket.AF_UNIX); live.bind(str(path)); live.listen(1)
+        with self.assertRaises(RuntimeError):
+            bticino_ipc.remove_stale_socket(path)
+        self.assertTrue(path.exists())
+        live.close(); path.unlink()
+        bticino_ipc.remove_stale_socket(path)   # nothing there: no error
