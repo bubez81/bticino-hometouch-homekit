@@ -10,10 +10,9 @@ the system and gives you:
 - the **camera**: the latest picture and the **live view with sound**;
 - one **opening button per gate**;
 - sensors: last ring, gate of the last ring, call in progress, SIP
-  registration.
-
-Talking to the door from Home Assistant is not available yet (it is in Apple
-Home, with the [Homebridge plugin](../homebridge-bticino-hometouch/README.md)).
+  registration;
+- a **dashboard card** to watch, **talk**, **answer a ring** and open the
+  gates.
 
 > Experimental, verified on one HOMETOUCH installation. Not affiliated with
 > BTicino or Legrand. Use it only with your own system.
@@ -64,6 +63,28 @@ Private files (certificate, key, logs, pictures) are kept in
 `/config/bticino_hometouch` with owner-only permissions and are included in
 Home Assistant backups.
 
+## The video door entry card
+
+The integration brings its own dashboard card, nothing else to install: edit
+a dashboard → *Add card* → **BTicino HOMETOUCH** (or YAML
+`type: custom:bticino-hometouch-card` with `entity:` the camera). It shows the
+live view and:
+
+- **Talk**: turns the microphone on and off during the live view; the panel
+  plays your voice;
+- **Answer** while someone is ringing: answers the call, turns the microphone
+  on and plays the panel's sound through the card; **Hang up** ends it (the
+  panel ends answered calls after about a minute);
+- one button per gate, with a confirmation.
+
+The browser gives the card the microphone only when Home Assistant is opened
+over **HTTPS** (for example through Home Assistant Cloud or your own
+certificate) or on the same device. The Companion app works when its server
+address is HTTPS.
+
+Answering from Home Assistant takes the call: other phones of the system, for
+example Apple Home through the plugin, stop ringing.
+
 ## Live view
 
 Add the camera to a dashboard, for example a *Picture entity* card with
@@ -85,6 +106,9 @@ address
 ```
 https://github.com/bubez81/bticino-hometouch-homekit/blob/main/blueprints/automation/bticino_hometouch/ring_notification.yaml
 ```
+
+For **Page opened by tapping the notification** choose a dashboard view with
+the card: tapping the notification then lets you answer.
 
 Create an automation from it and choose the doorbell event, the last ring
 entrance sensor, the camera, the opening buttons and the phones to notify
@@ -116,6 +140,8 @@ Every listener event is also fired on the bus as `bticino_hometouch_event`
 | Authentication errors after changes in the Door Entry app | ⋮ on the integration → **Reconfigure**: sign in again and the phone's credentials are re-read from the cloud (nothing new is created) |
 | A gate does not open | Check its address under **Configure** → **Entrances** |
 | No notification | Check the automation made from the blueprint and the Companion app's notification permissions |
+| The card says the microphone works only over HTTPS | Open Home Assistant through its HTTPS address |
+| The card is missing from *Add card* | Reload the page (the card is added by the integration at start-up) |
 
 The integration logs under `custom_components.bticino_hometouch`; the
 listener's lines carry the `[listener]` prefix, and calls to the camera are

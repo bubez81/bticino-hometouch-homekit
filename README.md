@@ -21,7 +21,7 @@ opening the gates. Pick what you use at home:
 | What to install | the Homebridge plugin `homebridge-bticino-hometouch` | the `bticino_hometouch` integration from HACS |
 | Ring notification | ✅ doorbell notification on iPhone, iPad, Mac, Watch | ✅ event + notification blueprint (picture, button for the gate that rang) |
 | Live view with sound | ✅ | ✅ (through Home Assistant's built-in go2rtc) |
-| Talk to the door | ✅ | not yet |
+| Talk to the door, answer a ring | ✅ | ✅ dashboard card (HTTPS) |
 | Open the gates | ✅ as locks | ✅ as buttons |
 | Guide | **[Plugin guide](homebridge-bticino-hometouch/README.md)** | **[Home Assistant guide](docs/home-assistant.md)** |
 

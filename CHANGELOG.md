@@ -41,6 +41,18 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (Home Assistant integration 0.2.0, talk)
+
+- Dashboard card `custom:bticino-hometouch-card`, served and registered by
+  the integration: live view, **Talk** (microphone during the live view),
+  **Answer** / **Hang up** for a ring with the panel's sound played by the
+  card, and the gates' buttons with confirmation.
+- Talk channel: a WebSocket on a signed path (Home Assistant login). The
+  microphone arrives as 16-bit PCM at 8 kHz and goes to the listener's talk
+  port as A-law, the input the Apple Home plugin uses; answering a ring uses
+  the listener's `attach_incoming` / `answer_incoming` / `release_incoming`
+  and streams the panel's sound back as 16-bit PCM at 16 kHz.
+
 ### Changed (documentation)
 
 - The repository README presents both ways to use the system, Apple Home
