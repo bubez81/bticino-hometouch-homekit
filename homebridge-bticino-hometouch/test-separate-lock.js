@@ -13,7 +13,7 @@ class Service {
 class Lock extends Service{} class Doorbell extends Service{}
 const Current={UNKNOWN:3,SECURED:1,UNSECURED:0},Target={SECURED:1,UNSECURED:0};
 const types={};
-const api={registerAccessory(_p,name,ctor){types[name]=ctor;},on(){},hap:{Service:{LockMechanism:Lock,Doorbell},Characteristic:{LockCurrentState:Current,LockTargetState:Target}}};
+const api={registerAccessory(_p,name,ctor){types[name]=ctor;},registerPlatform(){},on(){},hap:{Service:{LockMechanism:Lock,Doorbell},Characteristic:{LockCurrentState:Current,LockTargetState:Target}}};
 const log={info(){},warn(){},error(){}};
 require('./index')(api);
 (async()=>{

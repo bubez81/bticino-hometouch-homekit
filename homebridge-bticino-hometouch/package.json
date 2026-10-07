@@ -1,15 +1,45 @@
 {
   "name": "homebridge-bticino-hometouch",
   "version": "0.1.0",
-  "description": "Homebridge child bridge for BTicino HOMETOUCH video door entry",
+  "description": "BTicino HOMETOUCH video door entry for Apple Home: notifications, live view with two-way audio, entrance locks. One plugin, no extra services.",
   "main": "index.js",
   "scripts": {
-    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js",
-    "test:media": "node test-transport.js && node test-srtp-roundtrip.js && node test-two-way-audio.js && node test-live-audio.js"
+    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js && node test-platform.js && node test-supervisor.js",
+    "test:media": "node test-transport.js && node test-srtp-roundtrip.js && node test-two-way-audio.js && node test-live-audio.js",
+    "prepack": "node bundle-listener.js"
   },
-  "engines": {"node": ">=18.12.0", "homebridge": ">=1.6.0"},
-  "keywords": ["homebridge-plugin", "bticino", "hometouch", "doorbell"],
+  "engines": {
+    "node": ">=18.12.0",
+    "homebridge": ">=1.6.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "bticino",
+    "hometouch",
+    "doorbell"
+  ],
   "license": "MIT",
   "bin": {},
-  "dependencies": {}
+  "dependencies": {
+    "ffmpeg-for-homebridge": "^2.2.2",
+    "@homebridge/plugin-ui-utils": "^2.0.0"
+  },
+  "files": [
+    "index.js",
+    "ipc.js",
+    "stream.js",
+    "hap-stream.js",
+    "incoming-call.js",
+    "two-way-audio.js",
+    "live-audio.js",
+    "rtp-proxy.js",
+    "rtcp-diagnostic.js",
+    "call-unlock.js",
+    "supervisor.js",
+    "entrance-locks.js",
+    "config.schema.json",
+    "listener/",
+    "README.md",
+    "homebridge-ui/"
+  ]
 }

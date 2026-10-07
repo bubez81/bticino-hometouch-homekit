@@ -1,9 +1,16 @@
 # Homebridge (Apple Home)
 
-This guide connects the listener to Apple Home through a dedicated Homebridge
-instance running the plugin in `homebridge-bticino-hometouch/`. For Home
-Assistant see [home-assistant.md](home-assistant.md); both can run at the same
-time on the same listener.
+**Recommended: the all-in-one plugin.** Since 2026-10-07 the plugin runs the
+listener itself: install it from the Homebridge UI, sign in with the dedicated
+Door Entry account in its settings, restart, add *Videocitofono* in Apple Home.
+See the [plugin README](../homebridge-bticino-hometouch/README.md). It needs
+Python 3 on the Homebridge host and nothing else; the gates are locks inside
+the doorbell accessory and the Home Assistant integration can connect to it.
+
+The rest of this guide describes the advanced setup with a separate listener
+service and the `BTicinoHOMETOUCH` accessory, which the plugin still supports.
+For Home Assistant see [home-assistant.md](home-assistant.md); both can run at
+the same time on the same listener.
 
 Status (2026-10): ring notifications with snapshot, live video with the
 entrance panel's sound, answering a ring and talking to the door, and entrance

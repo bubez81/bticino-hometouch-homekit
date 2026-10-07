@@ -1,26 +1,120 @@
 {
-  "pluginAlias": "BTicinoHOMETOUCH",
-  "pluginType": "accessory",
+  "pluginAlias": "BTicinoHometouch",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "BTicino HOMETOUCH video door entry for Apple Home: ring notifications, live view with two-way audio, one lock per entrance. Sign in once with a dedicated Door Entry account; the plugin runs everything else.",
   "schema": {
     "type": "object",
     "properties": {
-      "name": {"type": "string", "default": "BTicino HOMETOUCH"},
-      "configPath": {"type": "string", "minLength": 1},
-      "listenerPath": {"type": "string", "minLength": 1}
-      ,"ipcSocket": {"type": "string", "minLength": 1}
-      ,"candidate": {"type": "string", "pattern": "^[1-4]$"}
-      ,"enableHapLive": {"type": "boolean", "default": false}
-      ,"enableCamera": {"type": "boolean", "default": false}
-      ,"enableTwoWayAudio": {"type": "boolean", "default": false}
-      ,"liveAudio": {"type": "boolean", "default": true, "description": "On-demand live view carries the entrance panel sound and, when Home unmutes the microphone, your voice. Needs enableTwoWayAudio and audio_ffmpeg (FFmpeg with libspeex) in the listener config."}
-      ,"talkPort": {"type": "integer", "minimum": 1024, "maximum": 65535, "default": 22310}
-      ,"enableCallUnlock": {"type": "boolean", "default": false}
-      ,"separateCallUnlock": {"type": "boolean", "default": false}
-      ,"standalone": {"type": "boolean", "default": false}
-      ,"serialNumber": {"type": "string", "minLength": 1}
-      ,"ffmpegPath": {"type": "string", "minLength": 1}
-      ,"audioFfmpegPath": {"type": "string", "minLength": 1}
+      "name": {
+        "title": "Name in Apple Home",
+        "type": "string",
+        "default": "Videocitofono",
+        "required": true
+      },
+      "entrances": {
+        "title": "Entrances",
+        "description": "One lock per entrance appears inside the doorbell. The address is the entrance panel's lock address (usually 20 for the first, 21 for the second).",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string",
+              "required": true
+            },
+            "address": {
+              "title": "Address",
+              "type": "string",
+              "pattern": "^[0-9]{1,4}$",
+              "required": true
+            }
+          }
+        }
+      },
+      "liveAudio": {
+        "title": "Sound in the live view",
+        "type": "boolean",
+        "default": true
+      },
+      "homeAssistant": {
+        "title": "Home Assistant",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Allow the Home Assistant integration to connect",
+            "type": "boolean",
+            "default": false
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer",
+            "default": 8790,
+            "minimum": 1024,
+            "maximum": 65535
+          },
+          "allowedClients": {
+            "title": "Allowed Home Assistant addresses (empty: any on the LAN)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "liveRtspUrl": {
+            "title": "Live RTSP URL for Home Assistant (optional, go2rtc)",
+            "type": "string"
+          }
+        }
+      },
+      "pythonPath": {
+        "title": "Python 3 (advanced)",
+        "type": "string",
+        "placeholder": "python3"
+      },
+      "ffmpegPath": {
+        "title": "FFmpeg (advanced; default: ffmpeg-for-homebridge)",
+        "type": "string"
+      },
+      "storagePath": {
+        "title": "Data folder (advanced; default: Homebridge storage/bticino-hometouch)",
+        "type": "string"
+      }
+    }
+  },
+  "layout": [
+    "name",
+    {
+      "key": "entrances",
+      "type": "array",
+      "buttonText": "Add entrance",
+      "items": [
+        "entrances[].name",
+        "entrances[].address"
+      ]
     },
-    "additionalProperties": false
-  }
+    "liveAudio",
+    {
+      "type": "fieldset",
+      "title": "Home Assistant",
+      "expandable": true,
+      "items": [
+        "homeAssistant.enabled",
+        "homeAssistant.port",
+        "homeAssistant.allowedClients",
+        "homeAssistant.liveRtspUrl"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced",
+      "expandable": true,
+      "items": [
+        "pythonPath",
+        "ffmpegPath",
+        "storagePath"
+      ]
+    }
+  ],
+  "customUi": true
 }
