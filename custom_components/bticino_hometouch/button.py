@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HometouchConfigEntry
@@ -15,8 +16,14 @@ from .entity import HometouchEntity
 async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     hub = entry.runtime_data
-    if hub.info.get("opening_enabled"):
-        async_add_entities(HometouchOpenButton(hub, name) for name in hub.entrances)
+    buttons = [HometouchOpenButton(hub, name) for name in hub.entrances] if hub.info.get("opening_enabled") else []
+    # Buttons of entrances removed or renamed in the options do not linger as unavailable.
+    current = {button.unique_id for button in buttons}
+    registry = er.async_get(hass)
+    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if item.domain == "button" and item.unique_id not in current:
+            registry.async_remove(item.entity_id)
+    async_add_entities(buttons)
 
 
 class HometouchOpenButton(HometouchEntity, ButtonEntity):

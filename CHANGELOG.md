@@ -41,6 +41,13 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Fixed (Home Assistant integration 0.2.0, reload)
+
+- Changing the entrances failed to reload the integration ("failed unload"):
+  the live view's cleanup returned a value Home Assistant took for a task.
+- Opening buttons of entrances removed or renamed in the options are removed
+  instead of staying unavailable.
+
 ### Fixed (Home Assistant integration 0.2.0, plugin setup)
 
 - Phone creation stopped with "Risposta cloud non valida (HTTP 201 … byte=0)"

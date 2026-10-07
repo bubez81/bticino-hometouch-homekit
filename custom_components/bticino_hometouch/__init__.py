@@ -14,7 +14,7 @@ from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -92,7 +92,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry) ->
             sources["_view"] = True
         source = sources[entry.entry_id] = LiveSource(runtime.socket)
         hub.live_url = source.url(hass, entry.entry_id)
-        entry.async_on_unload(lambda: sources.pop(entry.entry_id, None))
+
+        @callback
+        def _forget_source() -> None:
+            sources.pop(entry.entry_id, None)
+
+        entry.async_on_unload(_forget_source)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
