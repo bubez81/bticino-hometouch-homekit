@@ -240,6 +240,31 @@ def camera_candidates(blob: bytes) -> list[dict[str, str]]:
     return candidates
 
 
+def device_inventory(blob: bytes) -> list[dict[str, Any]]:
+    """Device types and addresses in archive.xml; names and other values are omitted."""
+    members = configuration_members(blob)
+    data = members.get("archive.xml")
+    if not data:
+        return []
+    if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
+        raise OnboardingError("Dichiarazioni XML non supportate")
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError as exc:
+        raise OnboardingError("Configurazione XML non valida") from exc
+    rows = []
+    for node in root.iter("obj"):
+        cid, dev, where = node.get("cid"), node.get("dev"), node.get("where")
+        def code(value, pattern=r"[A-Za-z0-9_#*.-]{1,24}"):
+            return value if re.fullmatch(pattern, value or "") else ("-" if value is None else "?")
+        rows.append({"cid": code(cid), "dev": code(dev), "where": code(where),
+                     # Entrance panels carry the addresses of their locks.
+                     "lock": code(node.get("lock")), "staircase": code(node.get("staircase")),
+                     "id": code(node.get("id")),
+                     "attributes": sorted(node.attrib)})
+    return rows
+
+
 @dataclass
 class CloudResponse:
     body: bytes
@@ -570,6 +595,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--diagnose-activations", action="store_true",
         help="mostra solo tag e attributi della configurazione, senza valori",
     )
+    parser.add_argument("--list-devices", action="store_true",
+                        help="elenca tipi e indirizzi dei dispositivi dell’impianto, senza nomi")
     parser.add_argument("--export-camera-candidates", action="store_true",
                         help="salva candidati video privati, senza inviare comandi SIP")
     return parser
@@ -622,6 +649,14 @@ def main(argv: list[str] | None = None) -> int:
         atomic_private_json(args.output / "camera-candidates.json",
                             {"version": 1, "candidates": candidates})
         print(f"Candidati video salvati privatamente: {len(candidates)}. Nessun comando SIP inviato.")
+        return 0
+    if args.list_devices:
+        rows = device_inventory(client.plant_configuration(plant_id, gateway_id))
+        print(f"Dispositivi nell’archivio: {len(rows)} (10050 posto esterno, 10061 TVCC, 10060 serratura)")
+        for row in rows:
+            print(f"  tipo={row['cid']} id={row['id']} dev={row['dev']} indirizzo={row['where']} "
+                  f"lock={row['lock']} staircase={row['staircase']} attributi={','.join(row['attributes'])}")
+        print("Nessuna modifica eseguita.")
         return 0
     if args.diagnose_activations:
         configuration = client.plant_configuration(plant_id, gateway_id)
