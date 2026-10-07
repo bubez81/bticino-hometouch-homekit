@@ -364,6 +364,25 @@ def prime_media(udp, rtcp, destinations):
         sock.sendto(b'\x00\x11\x00\x00\x21\x12\xa4\x42'+os.urandom(12), destination)
 
 
+def challenge_summary(lib, code, headers, raw):
+    """Who asked for authentication, without values that identify the account."""
+    challenge = lib.parse_digest_challenge(headers.get('www-authenticate') or headers.get('proxy-authenticate') or '')
+    realm = challenge.get('realm', '')
+    kind = ('assente' if not realm else 'dominio_impianto' if realm == getattr(lib, 'DOMAIN', None)
+            else 'iotleg' if 'iotleg' in realm else 'altro')
+    server = re.sub(r'[^A-Za-z0-9 ./_-]', '', raw_header(raw, 'server') or raw_header(raw, 'user-agent') or '-')[:40]
+    reason = re.sub(r'[^A-Za-z0-9 ./_-]', '', raw_header(raw, 'reason') or raw_header(raw, 'warning') or '-')[:60]
+    return (f'SIP_CHALLENGE status={code} realm={kind} algorithm={challenge.get("algorithm", "MD5")} '
+            f'qop={challenge.get("qop", "-")} stale={challenge.get("stale", "-")} server={server} reason={reason}')
+
+
+def raw_header(raw, name):
+    for line in raw.decode('utf-8', 'replace').splitlines():
+        if line.lower().startswith(name + ':'):
+            return line.split(':', 1)[1].strip()
+    return None
+
+
 def video_summary(raw):
     """Report negotiated capabilities only, never addresses or SDES material."""
     body = raw.partition(b'\r\n\r\n')[2].decode('utf-8', 'replace')
@@ -524,6 +543,8 @@ def main():
                 continue
             if code >= 300:
                 client.send(request('ACK', uri, to, cseq, branch))
+                if code in (401, 407):
+                    print(challenge_summary(lib, code, headers, raw), flush=True)
                 if code in (401, 407) and cseq == 1 and not cancelled:
                     challenge = lib.parse_digest_challenge(headers.get('www-authenticate') or headers.get('proxy-authenticate'))
                     auth = lib.digest_authorization(username=client.username, password=client.password,

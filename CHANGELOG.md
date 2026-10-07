@@ -41,6 +41,12 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (camera probe)
+
+- When a camera call is challenged for authentication (401/407), the call log
+  says who challenged it (the plant's SIP domain or another realm, the Server
+  header and the reason), without nonces or account identifiers.
+
 ### Fixed (Home Assistant integration 0.2.0, live)
 
 - Two requests opened at the same time (go2rtc and Home Assistant) share one
