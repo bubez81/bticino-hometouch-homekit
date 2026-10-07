@@ -1,3 +1,4 @@
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -108,3 +109,14 @@ class StaleSocketTests(unittest.TestCase):
         self.assertTrue(path.exists())
         live.close(); path.unlink()
         bticino_ipc.remove_stale_socket(path)   # nothing there: no error
+
+
+class HandlerTests(unittest.TestCase):
+    def test_a_client_that_left_does_not_raise(self):
+        class Gone(io.BytesIO):
+            def write(self, data):
+                raise BrokenPipeError(32, "Broken pipe")
+        handler = bticino_ipc._Handler.__new__(bticino_ipc._Handler)
+        handler.rfile = io.BytesIO(b'{"command":"ping"}\n')
+        handler.wfile = Gone()
+        handler.handle()  # no exception, nothing printed by socketserver

@@ -153,7 +153,10 @@ class _Handler(socketserver.StreamRequestHandler):
             response = handle_request(request)
         except (UnicodeDecodeError, json.JSONDecodeError):
             response = {"ok": False, "error": "invalid_json"}
-        self.wfile.write((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
+        try:
+            self.wfile.write((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the client stopped waiting for the answer (e.g. a closing live view)
 
 
 class IPCServer(socketserver.UnixStreamServer):
