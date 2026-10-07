@@ -32,7 +32,6 @@ from src.bticino_onboard import (
 class OnboardTests(unittest.TestCase):
     def test_creation_invalid_response_has_safe_metadata_and_no_retry(self):
         for status, body, media in (
-            (204, b"", "application/json"),
             (200, b"<html>private-token</html>", "text/html"),
             (200, b"private-token", "private-token"),
         ):
@@ -47,6 +46,14 @@ class OnboardTests(unittest.TestCase):
                 self.assertIn("non ripetere --apply", message)
                 self.assertNotIn("private-token", message)
                 self.assertNotIn("private-account", message)
+                self.assertEqual(client.request.call_count, 1)
+
+    def test_creation_without_body_defers_to_the_account_list(self):
+        for status in (200, 201, 204):
+            with self.subTest(status=status):
+                client = EliotClient()
+                client.request = Mock(return_value=CloudResponse(b"", {"Content-Type": "application/json"}, status))
+                self.assertEqual(client.create_sip_account({}), {})
                 self.assertEqual(client.request.call_count, 1)
 
     def test_creation_valid_response_preserves_one_time_password(self):

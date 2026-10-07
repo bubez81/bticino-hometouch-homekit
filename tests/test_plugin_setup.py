@@ -51,7 +51,9 @@ class PluginSetupTests(unittest.TestCase):
 
     def test_apply_writes_private_files_and_suggests_panel_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
-            def provision(client, email, plant, plant_id, gateway_id, provisioned, output_dir, openssl, device_name, log=print):
+            def provision(client, email, plant, plant_id, gateway_id, provisioned, output_dir, openssl, device_name,
+                          reuse_endpoint=None, log=print):
+                self.assertIsNone(reuse_endpoint)
                 output_dir.mkdir(parents=True)
                 path = output_dir / "config.json"
                 onboard.atomic_private_json(path, {"sip_domain": "gw.example", "credentials_file": str(output_dir / "c.json")})
@@ -73,6 +75,24 @@ class PluginSetupTests(unittest.TestCase):
                 code, result = self.run_setup("apply", "--plant-id", "P1", "--storage", tmp)
             self.assertEqual(code, 1)
             self.assertIn("Già configurato", result["error"])
+
+    def test_apply_reuses_an_endpoint_with_the_same_name(self):
+        seen = {}
+        class Existing(FakeClient):
+            def sip_accounts(self, plant_id, gateway_id):
+                return [{"SipAccount": "a@gw", "IdDevice": "0123456789AB", "DeviceName": "Home Assistant BTicino"},
+                        {"SipAccount": "b@gw", "IdDevice": "BA9876543210", "DeviceName": "Homebridge BTicino"}]
+        def provision(*args, reuse_endpoint=None, log=print):
+            seen["reuse"] = reuse_endpoint
+            raise onboard.OnboardingError("stop")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(onboard, "discover_gateway_id", return_value="GW"), \
+                patch.object(onboard, "provision", provision):
+            out = io.StringIO()
+            env = {"BTICINO_DOORENTRY_EMAIL": "bridge@example.com", "BTICINO_DOORENTRY_PASSWORD": "secret"}
+            with patch.dict(os.environ, env), patch.object(onboard, "EliotClient", Existing), redirect_stdout(out), \
+                    redirect_stderr(io.StringIO()):
+                setup.main(["apply", "--plant-id", "P1", "--storage", tmp, "--device-name", "Home Assistant BTicino"])
+        self.assertEqual(seen["reuse"], "Home Assistant BTicino")
 
     def test_missing_credentials_is_reported_not_raised(self):
         out = io.StringIO()
