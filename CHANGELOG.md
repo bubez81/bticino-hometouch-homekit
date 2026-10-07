@@ -1,8 +1,9 @@
 # Changelog
 
 Changes are dated by publication. This project remains experimental; entries
-describe implemented behavior separately from physical validation. No stable
-release or npm publication is implied.
+describe implemented behavior separately from physical validation. The
+Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
+Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-07
 
@@ -206,6 +207,16 @@ release or npm publication is implied.
   from the locks inside the doorbell and returned to locked, Home Assistant
   reconnected with its existing token. The separate listener service, the
   dedicated MQTT bridge and the mqttthing locks were retired.
+- Python 164 tests (1 skipped), Home Assistant 20 tests, plugin tests.
+- Home Assistant (OS 18.3, Raspberry Pi 5) migrated to the standalone
+  integration: phone created and registered, entrances and the ring
+  notification automation kept their entity IDs, the live view started
+  through the built-in go2rtc **with the panel's sound** once the gateway at
+  home was used. The cloud server's 407 on camera calls was observed before.
+- Plugin 0.9.4 installed from npm on the test installation.
+- Not yet verified on the real system: talking and answering from the
+  dashboard card, the notification's *Rispondi* button, and learning the
+  gateway's address from a ring through the cloud.
 
 ## 2026-10-06
 
