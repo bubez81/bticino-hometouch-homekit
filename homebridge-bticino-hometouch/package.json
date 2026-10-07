@@ -1,29 +1,20 @@
 {
   "name": "homebridge-bticino-hometouch",
-  "version": "0.1.0",
+  "displayName": "BTicino HOMETOUCH",
+  "version": "0.9.0",
   "description": "BTicino HOMETOUCH video door entry for Apple Home: notifications, live view with two-way audio, entrance locks. One plugin, no extra services.",
-  "main": "index.js",
-  "scripts": {
-    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js && node test-platform.js && node test-supervisor.js",
-    "test:media": "node test-transport.js && node test-srtp-roundtrip.js && node test-two-way-audio.js && node test-live-audio.js",
-    "prepack": "node bundle-listener.js"
-  },
-  "engines": {
-    "node": ">=18.12.0",
-    "homebridge": ">=1.6.0"
-  },
-  "keywords": [
-    "homebridge-plugin",
-    "bticino",
-    "hometouch",
-    "doorbell"
-  ],
+  "author": "bubez81",
   "license": "MIT",
-  "bin": {},
-  "dependencies": {
-    "ffmpeg-for-homebridge": "^2.2.2",
-    "@homebridge/plugin-ui-utils": "^2.0.0"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bubez81/bticino-hometouch-homekit.git",
+    "directory": "homebridge-bticino-hometouch"
   },
+  "homepage": "https://github.com/bubez81/bticino-hometouch-homekit/tree/main/homebridge-bticino-hometouch#readme",
+  "bugs": {
+    "url": "https://github.com/bubez81/bticino-hometouch-homekit/issues"
+  },
+  "main": "index.js",
   "files": [
     "index.js",
     "ipc.js",
@@ -41,5 +32,28 @@
     "listener/",
     "README.md",
     "homebridge-ui/"
-  ]
+  ],
+  "scripts": {
+    "test": "node -e \"JSON.parse(require('fs').readFileSync('config.schema.json')); require('./index.js'); console.log('PLUGIN_OK')\" && node test-call-unlock.js && node test-separate-lock.js && node test-incoming-call.js && node test-standalone.js && node test-platform.js && node test-supervisor.js",
+    "test:media": "node test-transport.js && node test-srtp-roundtrip.js && node test-two-way-audio.js && node test-live-audio.js",
+    "prepack": "node bundle-listener.js"
+  },
+  "engines": {
+    "node": ">=18.12.0",
+    "homebridge": "^1.6.0 || ^2.0.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "bticino",
+    "hometouch",
+    "doorbell",
+    "video-doorbell",
+    "intercom",
+    "legrand"
+  ],
+  "dependencies": {
+    "ffmpeg-for-homebridge": "^2.2.2",
+    "@homebridge/plugin-ui-utils": "^2.0.0"
+  },
+  "bin": {}
 }

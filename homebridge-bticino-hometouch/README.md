@@ -41,6 +41,10 @@ HOMETOUCH gateway needs. No other service to install.
 
 ## Using it
 
+The gates appear as locks inside the *Videocitofono* accessory, in its room,
+so the ring notification offers them. Apple Home lists them under *Other*; to
+show them as separate tiles: accessory settings → **Show as Separate Tiles**.
+
 - **Ring:** notification on iPhone, iPad and Apple Watch; HomePods chime. Open
   it for the live view; the talk button speaks to the door. An answered call
   lasts until the panel ends it (about a minute).
@@ -52,6 +56,15 @@ HOMETOUCH gateway needs. No other service to install.
   where the access token is. Then install the `bticino_hometouch` integration
   from HACS with the Homebridge host, port `8790` and that token.
 
+## Updating and removing
+
+- **Update:** Homebridge → Plugins → *Update*. The connection to the system,
+  the gates and the pairing in Apple Home are kept.
+- **Remove:** uninstall the plugin, then delete the Homebridge storage folder
+  `bticino-hometouch` and remove *Videocitofono* from Apple Home. The bridge's
+  phone stays registered on the system until the owner removes it in the Door
+  Entry app.
+
 ## Troubleshooting
 
 | Symptom | What to do |
@@ -61,6 +74,8 @@ HOMETOUCH gateway needs. No other service to install.
 | Live view without sound | Check the `BTicino live audio` lines in the log (sound level of the panel) |
 | A gate does not open | Check its address with **Prova apertura** |
 | No notification | In Apple Home, accessory settings → doorbell notifications on |
+| Home Assistant offers a "BTicino HOMETOUCH" bridge to pair | It is Homebridge's own (empty) bridge: ignore it |
+| Anything else | The Homebridge log shows the listener's lines with the `[listener]` prefix; calls are logged in `bticino-hometouch/camera-calls.log` |
 
 Private files (SIP certificate, key, keys of calls) stay in
 `<Homebridge storage>/bticino-hometouch` with owner-only permissions. Full

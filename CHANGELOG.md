@@ -33,12 +33,23 @@ release or npm publication is implied.
 - `probe-camera.py` finds the listener through `BTICINO_LISTENER`.
 - The plugin keeps retrying the listener connection instead of giving up when
   the listener starts after Homebridge.
+- Documentation reduced to one guide: the plugin README (also the npm page)
+  explains requirements, installation in three steps, use, updates and
+  troubleshooting; the repository README is a short overview. Research notes,
+  the old architecture, onboarding and validation pages were removed (they
+  remain in the Git history). The Home Assistant guide stays until the
+  integration is reworked.
+- Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
 ### Validation
 
 - Python 151 tests (1 skipped) and the plugin's tests, including a platform
-  test with a fake listener and the restart policy. Not yet run on a real
-  installation; the migration of the test installation follows.
+  test with a fake listener and the restart policy.
+- The test installation was migrated to the plugin: same Apple Home pairing
+  (no re-adding), listener registered, live view with sound, both gates opened
+  from the locks inside the doorbell and returned to locked, Home Assistant
+  reconnected with its existing token. The separate listener service, the
+  dedicated MQTT bridge and the mqttthing locks were retired.
 
 ## 2026-10-06
 
