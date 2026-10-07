@@ -41,6 +41,13 @@ release or npm publication is implied.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
+### Added (Home Assistant integration 0.2.0, local gateway)
+
+- Option *Gateway address (local network)*: the listener connects to the
+  HOMETOUCH gateway at home instead of the cloud SIP server. Camera calls (the
+  live video) are answered by the gateway; the cloud server challenges them
+  for a password the endpoint cannot provide (407 twice, observed).
+
 ### Fixed (SIP authentication)
 
 - Camera calls from a newly created phone were refused with 407 twice: when

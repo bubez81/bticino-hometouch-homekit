@@ -80,12 +80,17 @@ def write_private_json(path: Path, value) -> None:
     temporary.replace(path)
 
 
-def listener_config(storage: Path, ffmpeg: Path, entrances: dict[str, str], api_port: int) -> dict:
+def listener_config(storage: Path, ffmpeg: Path, entrances: dict[str, str], api_port: int,
+                    gateway: str | None = None) -> dict:
     """onboarding.json with relative private paths resolved, plus our settings."""
     base = json.loads((storage / "onboarding.json").read_text(encoding="utf-8"))
     for key, value in list(base.items()):
         if key.endswith("_file") and isinstance(value, str) and value and not os.path.isabs(value):
             base[key] = str(storage / value)
+    if gateway:
+        # The gateway at home answers camera calls directly; the cloud server
+        # asks for a password the endpoint cannot provide.
+        base["sip_server"] = gateway
     return {
         **base,
         "base_dir": str(storage),
@@ -103,8 +108,9 @@ class ListenerRuntime:
     """The listener as a supervised child process of Home Assistant."""
 
     def __init__(self, storage: Path, ffmpeg: Path, entrances: dict[str, str], api_port: int,
-                 python: str = sys.executable) -> None:
+                 python: str = sys.executable, gateway: str | None = None) -> None:
         self.storage, self.ffmpeg, self.entrances, self.api_port, self.python = storage, ffmpeg, entrances, api_port, python
+        self.gateway = gateway
         self.socket = storage / "hometouch.sock"
         self.process: asyncio.subprocess.Process | None = None
         self.task: asyncio.Task | None = None
@@ -139,7 +145,7 @@ class ListenerRuntime:
         while not self.stopping:
             config_file = self.storage / "listener.json"
             config = await loop.run_in_executor(None, listener_config, self.storage, self.ffmpeg,
-                                                self.entrances, self.api_port)
+                                                self.entrances, self.api_port, self.gateway)
             await loop.run_in_executor(None, write_private_json, config_file, config)
             started = loop.time()
             self.process = await asyncio.create_subprocess_exec(

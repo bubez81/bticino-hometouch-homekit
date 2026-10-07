@@ -98,12 +98,17 @@
         "title": "Ingressi",
         "description": "Un pulsante di apertura per ingresso: nome e indirizzo della serratura, separati da virgole. Esempio: `Scala=20, Esterno=21` (la serratura del posto esterno di solito è 20, una seconda 21).",
         "data": {
-          "entrances": "Ingressi"
+          "entrances": "Ingressi",
+          "gateway": "Indirizzo del gateway (rete locale)"
+        },
+        "data_description": {
+          "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50. Serve per il live: il server cloud rifiuta le chiamate alla telecamera. Vuoto: server cloud."
         }
       }
     },
     "error": {
-      "invalid_entrances": "Usa nome=indirizzo, separati da virgole"
+      "invalid_entrances": "Usa nome=indirizzo, separati da virgole",
+      "invalid_gateway": "Usa un indirizzo IP o un nome host, senza porta."
     }
   }
 }

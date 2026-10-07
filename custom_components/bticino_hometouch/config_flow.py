@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -21,7 +22,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ApiError, AuthError, HometouchApi
-from .const import CONF_ENTRANCES, CONF_STORAGE, DOMAIN, STORAGE_DIR
+from .const import CONF_ENTRANCES, CONF_GATEWAY, CONF_STORAGE, DOMAIN, STORAGE_DIR
 from .runtime import LISTENER_DIR
 
 CONF_PLANT = "plant"
@@ -39,6 +40,11 @@ def parse_entrances(text: str) -> list[dict[str, str]]:
             raise ValueError(part.strip())
         entrances.append({"name": name[:64], "address": address})
     return entrances
+
+
+def valid_host(value: str) -> bool:
+    """An IP address or host name of the gateway at home, without port or scheme."""
+    return bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", value))
 
 
 def format_entrances(entrances: list[dict[str, str]]) -> str:
@@ -199,13 +205,18 @@ class HometouchOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         current = format_entrances(self.config_entry.options.get(CONF_ENTRANCES, []))
+        gateway = self.config_entry.options.get(CONF_GATEWAY, "")
         if user_input is not None:
+            gateway = (user_input.get(CONF_GATEWAY) or "").strip()
             try:
                 entrances = parse_entrances(user_input[CONF_ENTRANCES])
             except ValueError:
                 errors[CONF_ENTRANCES] = "invalid_entrances"
-            else:
-                return self.async_create_entry(data={CONF_ENTRANCES: entrances})
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({
-            vol.Optional(CONF_ENTRANCES, default=current): str,
-        }), errors=errors)
+            if gateway and not valid_host(gateway):
+                errors[CONF_GATEWAY] = "invalid_gateway"
+            if not errors:
+                return self.async_create_entry(data={CONF_ENTRANCES: entrances, CONF_GATEWAY: gateway})
+        schema = {vol.Optional(CONF_ENTRANCES, default=current): str}
+        if self.config_entry.data.get(CONF_STORAGE):
+            schema[vol.Optional(CONF_GATEWAY, description={"suggested_value": gateway})] = str
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema), errors=errors)

@@ -42,6 +42,9 @@ def test_listener_config_resolves_private_paths(tmp_path):
     assert config["audio_ffmpeg"] == str(tmp_path / "ffmpeg") and config["incoming_audio"] is True
     assert config["entrances"] == {"scala": "20"} and config["entrance_open_enabled"] is True
     assert config["api"]["bind"] == "127.0.0.1" and config["api"]["port"] == 8791
+    assert config["sip_server"] == "192.0.2.1"
+    # The gateway at home replaces the cloud server.
+    assert runtime.listener_config(tmp_path, tmp_path / "ffmpeg", {}, 8791, "192.0.2.50")["sip_server"] == "192.0.2.50"
 
 
 def test_entrance_ids_match_the_plugin():

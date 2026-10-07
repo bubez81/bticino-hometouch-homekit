@@ -175,3 +175,25 @@ async def test_reconfigure_refreshes_the_phone_credentials(hass, listener, tmp_p
     assert done["type"] is FlowResultType.ABORT and done["reason"] == "credentials_refreshed"
     assert calls == [("refresh", "bridge@example.com", "secret", ("--storage", str(tmp_path)))]
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_options_gateway_address_for_the_standalone_setup(hass, listener, tmp_path):
+    from unittest.mock import AsyncMock, patch
+    entry = MockConfigEntry(domain=DOMAIN, data={"storage": str(tmp_path), CONF_HOST: "127.0.0.1",
+                                                 CONF_PORT: listener.port, CONF_TOKEN: TOKEN},
+                            options={"entrances": [{"name": "Scala", "address": "20"}]})
+    entry.add_to_hass(hass)
+    runtime = AsyncMock()
+    with patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        form = await hass.config_entries.options.async_init(entry.entry_id)
+        bad = await hass.config_entries.options.async_configure(
+            form["flow_id"], {"entrances": "Scala=20", "gateway": "http://x:5061"})
+        assert bad["errors"] == {"gateway": "invalid_gateway"}
+        ok = await hass.config_entries.options.async_configure(
+            bad["flow_id"], {"entrances": "Scala=20", "gateway": " 192.0.2.50 "})
+        assert ok["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+    assert entry.options["gateway"] == "192.0.2.50"
+    await hass.config_entries.async_unload(entry.entry_id)
