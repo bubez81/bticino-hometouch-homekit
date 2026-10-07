@@ -41,11 +41,17 @@ async def test_live_relays_the_camera_call_and_stops_it(hass, hass_client_no_aut
     client = await hass_client_no_auth()
 
     assert (await client.get("/api/bticino_hometouch/live/entry1?k=wrong")).status == 404
-    response = await client.get(f"/api/bticino_hometouch/live/entry1?k={source.secret}")
+    # Two viewers at once (go2rtc and Home Assistant) share one camera call.
+    response, second = await asyncio.gather(
+        client.get(f"/api/bticino_hometouch/live/entry1?k={source.secret}"),
+        client.get(f"/api/bticino_hometouch/live/entry1?k={source.secret}"))
     assert response.status == 200 and response.headers["Content-Type"] == "video/mp2t"
     data = await response.content.readexactly(188 * 5)
     assert data[0] == 0x47 and data[188] == 0x47
+    assert (await second.content.readexactly(188))[0] == 0x47
+    assert [r["command"] for r in requests].count("start_call") == 1
     response.close()
+    second.close()
     for _ in range(100):
         if any(r["command"] == "stop_call" for r in requests):
             break
@@ -60,3 +66,30 @@ async def test_live_relays_the_camera_call_and_stops_it(hass, hass_client_no_aut
         task.cancel()
     await asyncio.gather(*feeds, return_exceptions=True)
     sender.close()
+
+
+def test_last_call_lines_keeps_only_the_latest_call(tmp_path):
+    log = tmp_path / "camera-calls.log"
+    log.write_text("=== 10:00 start_call\nSIP_STATUS=200\n=== 11:00 start_call\nSIP_STATUS=486\n"
+                   "[h264 @ 0x1] no frame!\nPROBE accepted=False\n", encoding="utf-8")
+    assert live.last_call_lines(log) == ["=== 11:00 start_call", "SIP_STATUS=486", "PROBE accepted=False"]
+    assert live.last_call_lines(tmp_path / "missing.log") == []
+
+
+async def test_live_ends_when_there_is_nothing_to_show(hass, hass_client_no_auth, socket_enabled):
+    from unittest.mock import patch
+    assert await async_setup_component(hass, "http", {})
+
+    async def fake_ipc(path, request, timeout=12):
+        if request["command"] == "start_call":
+            return {"ok": False, "error": "call_already_running"}
+        return {"ok": True, "incoming": None}
+
+    source = live.LiveSource(Path("/tmp/unused.sock"))
+    hass.data.setdefault(DOMAIN, {})["entry2"] = source
+    hass.http.register_view(live.LiveView())
+    client = await hass_client_no_auth()
+    with patch.object(live, "ipc_request", fake_ipc), patch.object(live, "FIRST_VIDEO_TIMEOUT", 0.5), \
+            patch.object(live, "LOCAL_FEED_PORT", 0):
+        response = await client.get(f"/api/bticino_hometouch/live/entry2?k={source.secret}")
+        assert await asyncio.wait_for(response.content.read(), 5) == b""
