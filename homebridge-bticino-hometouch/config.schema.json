@@ -79,6 +79,10 @@
       "storagePath": {
         "title": "Data folder (advanced; default: Homebridge storage/bticino-hometouch)",
         "type": "string"
+      },
+      "ipcSocket": {
+        "title": "Listener socket (advanced; for go2rtc or the MQTT bridge, e.g. /tmp/bticino-hometouch.sock)",
+        "type": "string"
       }
     }
   },
@@ -112,7 +116,8 @@
       "items": [
         "pythonPath",
         "ffmpegPath",
-        "storagePath"
+        "storagePath",
+        "ipcSocket"
       ]
     }
   ],

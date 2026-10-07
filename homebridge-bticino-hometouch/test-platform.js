@@ -65,7 +65,7 @@ require('./index')(api);
     credentials_file: 'private/sip/credentials.json'}));
   const platform = new platforms.BTicinoHometouch(log, {name: 'Videocitofono', pythonPath: fake, ffmpegPath: '/opt/ffmpeg',
     entrances: [{name: 'Scala', address: '20'}, {name: 'Cancello Esterno', address: 21}, {name: 'bad', address: 'x'}],
-    homeAssistant: {enabled: true, port: 8790}}, api);
+    homeAssistant: {enabled: true, port: 8790}, ipcSocket: path.join(storageRoot, 'shared.sock')}, api);
 
   const config = JSON.parse(fs.readFileSync(path.join(storage, 'listener.json'), 'utf8'));
   assert.equal(fs.statSync(path.join(storage, 'listener.json')).mode & 0o777, 0o600);
@@ -83,7 +83,7 @@ require('./index')(api);
   const started = JSON.parse(fs.readFileSync(record, 'utf8'));
   assert(started.args[0].endsWith('bticino_hometouch_listener.py'));
   assert.equal(started.env.BTICINO_SNIFFER_CONFIG, path.join(storage, 'listener.json'));
-  assert.equal(started.env.BTICINO_IPC_SOCKET, path.join(storage, 'hometouch.sock'));
+  assert.equal(started.env.BTICINO_IPC_SOCKET, path.join(storageRoot, 'shared.sock'));
   assert.equal(started.env.BTICINO_IPC_ENABLE_CALLS, '1');
   assert(started.env.BTICINO_CAMERA_PROBE.endsWith('probe-camera.py'));
   assert(fs.existsSync(started.env.BTICINO_LISTENER));

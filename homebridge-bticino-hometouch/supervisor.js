@@ -30,10 +30,11 @@ function writePrivateJson(file, value) {
 }
 
 class ListenerSupervisor {
-  constructor({storage, python = 'python3', ffmpeg, settings = {}, log, spawnFn = spawn, setTimer = setTimeout}) {
+  constructor({storage, python = 'python3', ffmpeg, settings = {}, log, socket, spawnFn = spawn, setTimer = setTimeout}) {
     Object.assign(this, {storage, python, ffmpeg, settings, log, spawnFn, setTimer});
     this.directory = listenerDirectory();
-    this.socket = path.join(storage, 'hometouch.sock');
+    // Other local clients (go2rtc live source, MQTT bridge) may need a shared path.
+    this.socket = socket || path.join(storage, 'hometouch.sock');
     this.restarts = 0;
     this.stopping = false;
   }

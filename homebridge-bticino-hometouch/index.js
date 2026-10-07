@@ -46,7 +46,7 @@ class BTicinoPlatform {
     // The settings page creates storage/python (with pyzipper); otherwise the system python3.
     const venv = path.join(storage, 'python', 'bin', 'python3');
     const python = this.config.pythonPath || (fs.existsSync(venv) ? venv : 'python3');
-    this.supervisor = new ListenerSupervisor({storage, python, ffmpeg,
+    this.supervisor = new ListenerSupervisor({storage, python, ffmpeg, socket: this.config.ipcSocket,
       settings: {entrances, api: this.homeAssistantApi(storage)}, log});
     if (!this.supervisor.start()) return;
     this.doorbell = new BTicinoAccessory(log, {
