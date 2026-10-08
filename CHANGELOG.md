@@ -42,7 +42,7 @@ Home Assistant integration is installed from this repository through HACS.
   integration is reworked.
 - Plugin package 0.9.0: display name, repository links, Homebridge 1.6–2.x.
 
-### Fixed (listener IPC, next release)
+### Fixed (listener IPC, plugin 0.9.6, Home Assistant 0.2.2)
 
 - A client that stops waiting for an answer (for example the plugin while a
   live view closes) no longer makes the listener print a `BrokenPipeError`
