@@ -80,6 +80,9 @@ def handle_request(request: dict) -> dict:
             candidate = str(request.get("candidate", "1"))
             if candidate not in {"1", "2", "3", "4"}:
                 return {"ok": False, "error": "invalid_candidate"}
+            camera = request.get('camera', 0)
+            if type(camera) is not int or not 0 <= camera <= 3:
+                return {"ok": False, "error": "invalid_camera"}
             owner = request.get('session_id')
             port = request.get('video_port')
             if not isinstance(owner, str) or not owner or not isinstance(port, int) or not 1024 <= port <= 65535:
@@ -97,7 +100,13 @@ def handle_request(request: dict) -> dict:
             ]
             if request.get('audio') is True:
                 command.append("--audio")
-            log = open_camera_log(f"start_call candidate={candidate} audio={'--audio' in command}")
+            if camera:
+                # Another camera of the same entrance panel (the app's camera arrow);
+                # its latest picture is kept for previews that must not call it.
+                command += ["--camera", str(camera)]
+                environment["BTICINO_CAMERA_FRAME"] = str(SNAPSHOT_DIR / "cameras" / f"camera-{camera}.jpg")
+            log = open_camera_log(f"start_call candidate={candidate} audio={'--audio' in command}"
+                                  + (f" camera={camera}" if camera else ""))
             try:
                 # Own session: a listener restart must not kill the call before it
                 # sends BYE; the probe ends the call itself when the listener is gone.

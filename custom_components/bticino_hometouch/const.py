@@ -7,6 +7,8 @@ STORAGE_DIR = "bticino_hometouch"
 CONF_STORAGE = "storage"
 CONF_ENTRANCES = "entrances"
 CONF_GATEWAY = "gateway"
+CONF_SECOND_CAMERA = "second_camera_name"
+DEFAULT_SECOND_CAMERA = "Esterno"
 MANUFACTURER = "BTicino"
 MODEL = "HOMETOUCH (via listener)"
 

@@ -93,3 +93,27 @@ async def test_live_ends_when_there_is_nothing_to_show(hass, hass_client_no_auth
             patch.object(live, "LOCAL_FEED_PORT", 0):
         response = await client.get(f"/api/bticino_hometouch/live/entry2?k={source.secret}")
         assert await asyncio.wait_for(response.content.read(), 5) == b""
+
+
+async def test_second_camera_source_asks_for_camera_one(hass, hass_client_no_auth, socket_enabled):
+    from unittest.mock import patch
+    assert await async_setup_component(hass, "http", {})
+    requests = []
+
+    async def fake_ipc(path, request, timeout=12):
+        requests.append(request)
+        if request["command"] == "incoming_status":
+            return {"ok": True, "incoming": {"state": "ringing"}}
+        return {"ok": False, "error": "busy"}
+
+    source = live.LiveSource(Path("/tmp/unused.sock"), camera=1)
+    hass.data.setdefault(DOMAIN, {})["entry3_1"] = source
+    hass.http.register_view(live.LiveView())
+    client = await hass_client_no_auth()
+    with patch.object(live, "ipc_request", fake_ipc), patch.object(live, "FIRST_VIDEO_TIMEOUT", 0.5), \
+            patch.object(live, "LOCAL_FEED_PORT", 0):
+        response = await client.get(f"/api/bticino_hometouch/live/entry3_1?k={source.secret}")
+        await asyncio.wait_for(response.content.read(), 5)
+    # A ring does not hijack the second camera: it still asks for camera 1.
+    start = next(r for r in requests if r["command"] == "start_call")
+    assert start["camera"] == 1

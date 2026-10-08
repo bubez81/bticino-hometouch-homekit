@@ -38,6 +38,18 @@
         "type": "boolean",
         "default": true
       },
+      "secondCamera": {
+        "title": "Second camera of the entrance panel (when the system has one)",
+        "type": "boolean",
+        "default": true,
+        "description": "The camera the Door Entry app reaches with its arrow. It appears as a separate camera in Apple Home."
+      },
+      "secondCameraName": {
+        "title": "Name of the second camera",
+        "type": "string",
+        "default": "Esterno",
+        "maxLength": 64
+      },
       "homeAssistant": {
         "title": "Home Assistant",
         "type": "object",
@@ -98,6 +110,8 @@
       ]
     },
     "liveAudio",
+    "secondCamera",
+    "secondCameraName",
     {
       "type": "fieldset",
       "title": "Home Assistant",

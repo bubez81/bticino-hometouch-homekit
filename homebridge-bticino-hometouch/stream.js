@@ -185,7 +185,7 @@ class StreamManager {
       });
       await new Promise((resolve,reject)=>{s.process.once('spawn',resolve);s.process.once('error',reject);});
       s.process.once('exit',(code,signal)=>{this.log.info(`HomeKit encoder closed code=${code} signal=${signal} frames=${s.frames||0}`);this.stop(s.id).catch(()=>{});});
-      if (!diagnostic && !s.incoming) s.pending=ipc.request(this.socketPath,'start_call',{candidate:this.config.candidate||'1',session_id:s.id,video_port:port,
+      if (!diagnostic && !s.incoming) s.pending=ipc.request(this.socketPath,'start_call',{candidate:this.config.candidate||'1',session_id:s.id,video_port:port,...(this.config.camera?{camera:this.config.camera}:{}),
         ...(s.liveAudio ? {audio:true,audio_port:s.liveAudio.panelPort} : {})},5000);
       const result=diagnostic || s.incoming ? {ok:true} : await s.pending;
       if (!result.ok) throw Error(result.error||'SIP start failed');
@@ -216,7 +216,7 @@ class StreamManager {
             }
             s.nextReopen = Date.now() + 5000 * s.reopenAttempts;
             this.log.info('HomeKit source ended: reopening SIP while preserving video session');
-            s.pending = ipc.request(this.socketPath, 'start_call', {candidate:this.config.candidate||'1',session_id:s.id,video_port:port,
+            s.pending = ipc.request(this.socketPath, 'start_call', {candidate:this.config.candidate||'1',session_id:s.id,video_port:port,...(this.config.camera?{camera:this.config.camera}:{}),
         ...(s.liveAudio ? {audio:true,audio_port:s.liveAudio.panelPort} : {})},5000);
             const renewed = await s.pending;
             if (!renewed.ok) throw Error(renewed.error || 'SIP source renewal failed');
