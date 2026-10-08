@@ -680,12 +680,17 @@ def main():
                             # the camera's next periodic keyframe, as on incoming calls.
                             if (args.keyframe_request and keyframe_requests < KEYFRAME_REQUESTS
                                     and time.monotonic() >= next_keyframe_request):
-                                rtcp.sendto(lib.make_srtcp_pli(local_material, feedback_ssrc,
-                                    int.from_bytes(data[8:12], 'big'), feedback_index), destinations[1])
-                                feedback_index += 1
                                 keyframe_requests += 1
                                 next_keyframe_request = time.monotonic()+1
-                                print(f'KEYFRAME_REQUEST sent={keyframe_requests}', flush=True)
+                                try:
+                                    rtcp.sendto(lib.make_srtcp_pli(local_material, feedback_ssrc,
+                                        int.from_bytes(data[8:12], 'big'), feedback_index), destinations[1])
+                                    feedback_index += 1
+                                    print(f'KEYFRAME_REQUEST sent={keyframe_requests}', flush=True)
+                                except Exception as exc:
+                                    # Optional speed-up: never end the call because of it.
+                                    keyframe_requests = KEYFRAME_REQUESTS
+                                    print(f'KEYFRAME_REQUEST failed={type(exc).__name__}', flush=True)
                             if args.rtcp_feedback and time.monotonic() >= next_feedback:
                                 feedback = lib.make_srtcp_pli(local_material, feedback_ssrc,
                                     int.from_bytes(data[8:12], 'big'), feedback_index)
