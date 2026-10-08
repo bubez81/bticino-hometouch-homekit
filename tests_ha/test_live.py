@@ -90,7 +90,7 @@ async def test_live_ends_when_there_is_nothing_to_show(hass, hass_client_no_auth
     hass.http.register_view(live.LiveView())
     client = await hass_client_no_auth()
     with patch.object(live, "ipc_request", fake_ipc), patch.object(live, "FIRST_VIDEO_TIMEOUT", 0.5), \
-            patch.object(live, "LOCAL_FEED_PORT", 0):
+            patch.object(live, "LOCAL_FEED_PORT", 0), patch.object(live, "SWITCH_ATTEMPTS", 1):
         response = await client.get(f"/api/bticino_hometouch/live/entry2?k={source.secret}")
         assert await asyncio.wait_for(response.content.read(), 5) == b""
 
@@ -117,3 +117,33 @@ async def test_second_camera_source_asks_for_camera_one(hass, hass_client_no_aut
     # A ring does not hijack the second camera: it still asks for camera 1.
     start = next(r for r in requests if r["command"] == "start_call")
     assert start["camera"] == 1
+
+
+async def test_switching_camera_ends_the_other_call_first(hass):
+    from unittest.mock import patch
+    requests = []
+    running = {"owner": "ha-scale"}
+
+    async def fake_ipc(path, request, timeout=12):
+        requests.append(request)
+        if request["command"] == "stop_call":
+            running["owner"] = None
+            return {"ok": True}
+        if request["command"] == "start_call":
+            if running["owner"]:
+                return {"ok": False, "error": "call_already_running"}
+            running["owner"] = request["session_id"]
+            return {"ok": True}
+        return {"ok": True}
+
+    scale = live.LiveSource(Path("/tmp/unused.sock"))
+    outside = live.LiveSource(Path("/tmp/unused.sock"), camera=1)
+    scale.siblings = outside.siblings = [scale, outside]
+    scale.active_session = "ha-scale"
+    with patch.object(live, "ipc_request", fake_ipc):
+        result = await outside._start_call("ha-outside", 40000)  # one retry, one second
+    assert result["ok"]
+    assert {"command": "stop_call", "session_id": "ha-scale"} in requests
+    assert scale.active_session is None
+    starts = [r for r in requests if r["command"] == "start_call"]
+    assert starts[-1]["camera"] == 1 and len(starts) == 2

@@ -33,7 +33,8 @@ _LOGGER = logging.getLogger(__name__)
 LOCAL_FEED_PORT = 22300
 FIRST_VIDEO_TIMEOUT = 12.0
 STALL_TIMEOUT = 15.0
-CALL_COOLDOWN = 20.0
+CALL_COOLDOWN = 8.0
+SWITCH_ATTEMPTS = 6
 URL = "/api/bticino_hometouch/live/{entry_id}"
 
 
@@ -96,6 +97,10 @@ class LiveSource:
         self.camera = camera
         self.secret = secrets.token_urlsafe(24)
         self.last_call_end = 0.0
+        # The entry's live sources share the gateway, which takes one camera call
+        # at a time: switching camera ends the other source's call first.
+        self.siblings: list[LiveSource] = [self]
+        self.active_session: str | None = None
         self.viewers: set[asyncio.Queue] = set()
         self.relay: asyncio.Task | None = None
 
@@ -139,14 +144,10 @@ class LiveSource:
             elif time.monotonic() - self.last_call_end >= CALL_COOLDOWN:
                 transport, protocol = await _open_udp(0)
                 port = transport.get_extra_info("sockname")[1]
-                try:
-                    result = await ipc_request(self.socket_path, {"command": "start_call", "candidate": "1",
-                                                                  "session_id": session, "video_port": port, "audio": True,
-                                                                  **({"camera": self.camera} if self.camera else {})})
-                except (OSError, ValueError, asyncio.TimeoutError) as err:
-                    result = {"ok": False, "error": str(err)}
+                result = await self._start_call(session, port)
                 if result.get("ok"):
                     call_started, mode = True, "on_demand"
+                    self.active_session = session
                 else:
                     _LOGGER.info("Live: camera call not started (%s); showing the latest picture", result.get("error"))
                     transport.close()
@@ -188,7 +189,27 @@ class LiveSource:
                 await self._stop_call(session)
             self._send(None)
 
+    async def _start_call(self, session: str, port: int) -> dict:
+        request = {"command": "start_call", "candidate": "1", "session_id": session, "video_port": port,
+                   "audio": True, **({"camera": self.camera} if self.camera else {})}
+        for attempt in range(SWITCH_ATTEMPTS):
+            try:
+                result = await ipc_request(self.socket_path, request)
+            except (OSError, ValueError, asyncio.TimeoutError) as err:
+                return {"ok": False, "error": str(err)}
+            if result.get("ok") or result.get("error") != "call_already_running":
+                return result
+            if attempt == 0:
+                for other in self.siblings:
+                    if other is not self and other.active_session:
+                        _LOGGER.debug("Live: ending camera %s for camera %s", other.camera, self.camera)
+                        await other._stop_call(other.active_session)
+            await asyncio.sleep(1)
+        return result
+
     async def _stop_call(self, session: str) -> None:
+        if self.active_session == session:
+            self.active_session = None
         self.last_call_end = time.monotonic()
         try:
             await ipc_request(self.socket_path, {"command": "stop_call", "session_id": session})
