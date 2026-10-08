@@ -1,7 +1,7 @@
 {
   "name": "homebridge-bticino-hometouch",
   "displayName": "BTicino HOMETOUCH",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "BTicino HOMETOUCH video door entry for Apple Home: notifications, live view with two-way audio, entrance locks. One plugin, no extra services.",
   "author": "bubez81",
   "license": "MIT",
