@@ -7,6 +7,14 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-08
 
+### Fixed (Home Assistant 0.3.4)
+
+- The second camera's live view started late in Home Assistant: after the
+  switch the gateway still sends the panel's sound, and its audio track made
+  Home Assistant's stream fail to package (`Error muxing stream`, reproduced
+  with FFmpeg's MP4 muxer) before a retry worked. The second camera is now
+  video only, as in the Door Entry app and in the Homebridge plugin.
+
 ### Fixed (Home Assistant 0.3.3)
 
 - Switching from one camera to the other in Home Assistant failed: the

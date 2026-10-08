@@ -147,3 +147,4 @@ async def test_switching_camera_ends_the_other_call_first(hass):
     assert scale.active_session is None
     starts = [r for r in requests if r["command"] == "start_call"]
     assert starts[-1]["camera"] == 1 and len(starts) == 2
+    assert "audio" not in starts[-1]  # the second camera is video only

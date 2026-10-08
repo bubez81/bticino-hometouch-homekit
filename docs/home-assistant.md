@@ -81,8 +81,8 @@ live view and:
 
 If your entrance panel has a second camera (the one the Door Entry app shows
 with its arrow), the integration adds a second camera entity, *Esterno* by
-default (**Configure** → *Name of the second camera*). Its picture is the
-latest one seen in its live view.
+default (**Configure** → *Name of the second camera*). It is video only, and
+its picture is the latest one seen in its live view.
 
 The browser gives the card the microphone only when Home Assistant is opened
 over **HTTPS** (for example through Home Assistant Cloud or your own
