@@ -7,6 +7,14 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-08
 
+### Fixed (Home Assistant 0.3.3)
+
+- Switching from one camera to the other in Home Assistant failed: the
+  gateway takes one camera call at a time and the previous camera's call was
+  still open (`call_already_running`), so the new live view had nothing to
+  show. The live view now ends the other camera's call and retries for a few
+  seconds. The wait between two calls of the same camera is 8 s instead of 20.
+
 ### Fixed (Home Assistant 0.3.2, plugin 0.10.0)
 
 - Since Home Assistant 0.2.1 every camera call inside Home Assistant failed as
