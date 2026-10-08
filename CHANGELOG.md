@@ -7,6 +7,11 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-08
 
+### Changed (Home Assistant 0.3.1, plugin 0.10.0)
+
+- A failed camera call reports where it failed (file, line and function of
+  the camera probe) next to the error type; messages stay out of the log.
+
 ### Added (plugin 0.10.0, Home Assistant 0.3.0): second camera
 
 - The entrance panel's next camera (a Tvcc camera, which the Door Entry app

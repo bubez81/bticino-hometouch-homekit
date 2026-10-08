@@ -809,5 +809,9 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
-        print(f'PROBE_ERROR={type(exc).__name__} (dettagli privati omessi)')
+        # Where it failed (file, line, function), never the message: it may hold keys or paths.
+        import traceback
+        frames = traceback.extract_tb(exc.__traceback__)[-3:]
+        where = ' <- '.join(f'{Path(f.filename).name}:{f.lineno}:{f.name}' for f in reversed(frames))
+        print(f'PROBE_ERROR={type(exc).__name__} at {where} (dettagli privati omessi)')
         raise SystemExit(1)
