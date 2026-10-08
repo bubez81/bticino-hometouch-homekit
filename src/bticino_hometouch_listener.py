@@ -638,13 +638,22 @@ def aes_cm_prf(master_key, master_salt, label, length):
         ((counter + i) & ((1 << 128) - 1)).to_bytes(16, "big")
         for i in range((length + 15) // 16)
     )
-    result = subprocess.run(
-        [OPENSSL, "enc", "-aes-128-ecb", "-K", master_key.hex(),
-         "-nosalt", "-nopad"],
-        input=blocks, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        check=True,
-    )
-    return result.stdout[:length]
+    return aes_128_ecb(master_key, blocks)[:length]
+
+
+def aes_128_ecb(key, blocks):
+    """AES-128-ECB with the `cryptography` library when present (Home Assistant
+    has it but no `openssl` command), otherwise with the `openssl` command."""
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    except ImportError:
+        result = subprocess.run(
+            [OPENSSL, "enc", "-aes-128-ecb", "-K", key.hex(), "-nosalt", "-nopad"],
+            input=blocks, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        return result.stdout
+    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    return encryptor.update(blocks) + encryptor.finalize()
 
 
 def make_srtcp_pli(master_material, sender_ssrc, media_ssrc, index=0):

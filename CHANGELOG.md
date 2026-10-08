@@ -7,6 +7,16 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-08
 
+### Fixed (Home Assistant 0.3.2, plugin 0.10.0)
+
+- Since Home Assistant 0.2.1 every camera call inside Home Assistant failed as
+  soon as video arrived (`FileNotFoundError` in `subprocess.run`): the keyframe
+  request derives its SRTCP key with AES, which called the `openssl` command,
+  absent on Home Assistant OS. AES now uses the `cryptography` library when
+  present (the `openssl` command otherwise), checked against the RFC 3711
+  key-derivation vectors; a failing keyframe request no longer ends the call.
+  Calls during a ring use the same derivation.
+
 ### Changed (Home Assistant 0.3.1, plugin 0.10.0)
 
 - A failed camera call reports where it failed (file, line and function of
