@@ -7,6 +7,7 @@ import json
 import ipaddress
 import os
 import re
+import shutil
 import socket
 import signal
 import subprocess
@@ -16,12 +17,28 @@ import uuid
 from pathlib import Path
 
 
+TEMP_PREFIX = 'bticino-video-probe-'
+STALE_TEMP_SECONDS = 3600
+
+
+def remove_stale_temporaries(base=None, now=None):
+    """Folders left by calls that were killed: they hold private keys and frames."""
+    base = Path(base or tempfile.gettempdir())
+    now = time.time() if now is None else now
+    for folder in base.glob(TEMP_PREFIX + '*'):
+        try:
+            if folder.is_dir() and not folder.is_symlink() and now - folder.stat().st_mtime > STALE_TEMP_SECONDS:
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            pass
+
+
 class FrameDecoder:
     """Isolated FFmpeg receiver: key in private temporary SDP, no public stream."""
     def __init__(self, lib, client, raw, stream=False, audio=None):
         payload, fmtp, tag, key, *_ = client.parse_video_offer(raw)
         self.audio = audio
-        self.directory = Path(tempfile.mkdtemp(prefix='bticino-video-probe-'))
+        self.directory = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
         self.sdp = self.directory / 'input.sdp'
         self.frame = self.directory / 'frame.jpg'
         self.stream_port = int(os.environ.get('BTICINO_LIVE_VIDEO_PORT', '22300'))
@@ -105,6 +122,10 @@ class FrameDecoder:
         self.sdp.unlink(missing_ok=True)
         if self.frame.exists():
             self.frame.chmod(0o600)
+
+    def discard(self):
+        """Remove the private folder (key files and the frame) after the call."""
+        shutil.rmtree(self.directory, ignore_errors=True)
 
 
 def media_destinations(raw, kind='video'):
@@ -442,6 +463,7 @@ def main():
     args = p.parse_args()
     if not 1 <= args.duration <= 300:
         p.error('duration must be between 1 and 300 seconds')
+    remove_stale_temporaries()
     rows = json.loads(Path(args.candidates).read_text())['candidates']
     if not 1 <= args.candidate <= len(rows):
         raise ValueError('Invalid candidate index')
@@ -709,8 +731,11 @@ def main():
             decoder.close()
             valid = decoder.frame.exists() and decoder.frame.stat().st_size > 0
             print(f'FRAME_SAVED={valid}')
-            if valid:
+            if valid and args.decode_frame:
                 print(f'Fotogramma privato: {decoder.frame}')
+            else:
+                # Live calls do not use the frame: nothing private stays on disk.
+                decoder.discard()
         for sock in sockets:
             sock.close()
         if accepted and not finished and dialog_file is not None and dialog_file.exists():
