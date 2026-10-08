@@ -190,8 +190,11 @@ class LiveSource:
             self._send(None)
 
     async def _start_call(self, session: str, port: int) -> dict:
+        # The other cameras are video only, as in the Door Entry app: after the switch
+        # the gateway still sends the panel's sound, whose timestamps break the
+        # player's packaging (observed), and it is not that camera's sound anyway.
         request = {"command": "start_call", "candidate": "1", "session_id": session, "video_port": port,
-                   "audio": True, **({"camera": self.camera} if self.camera else {})}
+                   **({"camera": self.camera} if self.camera else {"audio": True})}
         for attempt in range(SWITCH_ATTEMPTS):
             try:
                 result = await ipc_request(self.socket_path, request)
