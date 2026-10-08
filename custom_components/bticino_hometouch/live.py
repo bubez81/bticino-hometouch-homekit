@@ -90,8 +90,10 @@ class LiveSource:
     camera call, which the listener would refuse.
     """
 
-    def __init__(self, socket_path: Path) -> None:
+    def __init__(self, socket_path: Path, camera: int = 0) -> None:
         self.socket_path = socket_path
+        # 0: the entrance panel's camera; 1: its next camera (the app's camera arrow).
+        self.camera = camera
         self.secret = secrets.token_urlsafe(24)
         self.last_call_end = 0.0
         self.viewers: set[asyncio.Queue] = set()
@@ -132,14 +134,15 @@ class LiveSource:
             except (OSError, ValueError, asyncio.TimeoutError):
                 incoming = None
             mode = "local"
-            if incoming:
+            if incoming and not self.camera:
                 mode = "incoming"
             elif time.monotonic() - self.last_call_end >= CALL_COOLDOWN:
                 transport, protocol = await _open_udp(0)
                 port = transport.get_extra_info("sockname")[1]
                 try:
                     result = await ipc_request(self.socket_path, {"command": "start_call", "candidate": "1",
-                                                                  "session_id": session, "video_port": port, "audio": True})
+                                                                  "session_id": session, "video_port": port, "audio": True,
+                                                                  **({"camera": self.camera} if self.camera else {})})
                 except (OSError, ValueError, asyncio.TimeoutError) as err:
                     result = {"ok": False, "error": str(err)}
                 if result.get("ok"):

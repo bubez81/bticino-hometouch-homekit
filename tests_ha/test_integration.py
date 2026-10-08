@@ -197,3 +197,36 @@ async def test_options_gateway_address_for_the_standalone_setup(hass, listener, 
         await hass.async_block_till_done()
     assert entry.options["gateway"] == "192.0.2.50"
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_second_camera_entity_when_the_system_has_one(hass, listener, tmp_path):
+    import json
+    from unittest.mock import AsyncMock, patch
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.setup import async_setup_component
+    assert await async_setup_component(hass, "http", {})
+    (tmp_path / "camera-candidates.json").write_text(json.dumps({"candidates": [{"cid": "10050"}, {"cid": "10061"}]}))
+    frame = tmp_path / "snapshots" / "cameras" / "camera-1.jpg"
+    frame.parent.mkdir(parents=True)
+    frame.write_bytes(b"jpeg-camera-1")
+    runtime = AsyncMock()
+    runtime.storage = tmp_path
+    runtime.socket = tmp_path / "hometouch.sock"
+    entry = MockConfigEntry(domain=DOMAIN, data={"storage": str(tmp_path), CONF_HOST: "127.0.0.1",
+                                                 CONF_PORT: listener.port, CONF_TOKEN: TOKEN},
+                            options={"second_camera_name": "Cancello"})
+    entry.add_to_hass(hass)
+    with patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        registry = er.async_get(hass)
+        await wait_for(lambda: len([e for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+                                    if e.domain == "camera"]) == 2)
+        second = registry.async_get_entity_id("camera", DOMAIN, f"{entry.entry_id}_camera_1")
+        assert second is not None
+        await wait_for(lambda: hass.states.get(second) is not None)
+        assert hass.states.get(second).attributes["friendly_name"].endswith("Cancello")
+        from homeassistant.components.camera import async_get_image
+        assert (await async_get_image(hass, second)).content == b"jpeg-camera-1"
+        assert f"{entry.entry_id}_1" in hass.data[DOMAIN]
+        await hass.config_entries.async_unload(entry.entry_id)

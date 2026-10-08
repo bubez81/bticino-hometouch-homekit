@@ -453,6 +453,8 @@ def main():
     p.add_argument('--decode-frame', action='store_true', help='decifra e salva un fotogramma privato')
     p.add_argument('--stream', action='store_true', help='inoltra il video decifrato a MPEG-TS localhost:22300')
     p.add_argument('--rtcp-feedback', action='store_true', help='invia feedback SRTCP autenticato durante il video')
+    p.add_argument('--camera', type=int, default=0,
+                   help="telecamera dello stesso posto esterno: 0 la principale, 1 la successiva (come la freccia dell'app)")
     p.add_argument('--no-keyframe-request', dest='keyframe_request', action='store_false',
                    help="non chiedere un fotogramma completo all'avvio del video")
     p.add_argument('--audio', action='store_true',
@@ -463,6 +465,8 @@ def main():
     args = p.parse_args()
     if not 1 <= args.duration <= 300:
         p.error('duration must be between 1 and 300 seconds')
+    if not 0 <= args.camera <= 3:
+        p.error('camera must be between 0 and 3')
     remove_stale_temporaries()
     rows = json.loads(Path(args.candidates).read_text())['candidates']
     if not 1 <= args.candidate <= len(rows):
@@ -588,6 +592,42 @@ def main():
                       if line.lower().startswith('record-route:')][::-1]
             client.send(request('ACK', target, to, cseq, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
             if not accepted:
+                save_dialog(dialog_file, {'call_id': call, 'from_tag': tag, 'to': to, 'target': target,
+                                          'routes': routes, 'cseq': cseq})
+            if not accepted and args.camera and not cancelled:
+                # The app's camera arrow: re-INVITE in the dialog asking the same
+                # entrance panel for its next camera (a=CAMERASLIDING:1). Done before
+                # the decoder starts, so the stream begins on the chosen camera.
+                for step in range(args.camera):
+                    cseq += 1
+                    sliding = body.replace('o=probe 1 1 ', f'o=probe 1 {step + 2} ').replace(
+                        f"a=DEVADDR:{rows[args.candidate-1]['devaddr']}\r\n",
+                        f"a=DEVADDR:{rows[args.candidate-1]['devaddr']}\r\na=CAMERASLIDING:1\r\n")
+                    client.send(request('INVITE', target, to, cseq, 'z9hG4bK'+uuid.uuid4().hex, sliding, routes=routes))
+                    answer = None
+                    slide_deadline = time.monotonic() + 6
+                    while time.monotonic() < slide_deadline:
+                        try:
+                            reply = client.stream.read_message(timeout=0.5)
+                        except socket.timeout:
+                            continue
+                        reply_headers, _ = lib.sip_headers(reply)
+                        if reply_headers.get('call-id') != call or not reply_headers.get('cseq', '').startswith(f'{cseq} '):
+                            continue
+                        reply_code = lib.status_code(reply)
+                        if reply_code is None or reply_code < 200:
+                            continue
+                        answer = reply if reply_code == 200 else None
+                        if reply_code >= 200:
+                            client.send(request('ACK', target, to, cseq, 'z9hG4bK'+uuid.uuid4().hex, routes=routes))
+                        break
+                    if answer is None:
+                        print(f'CAMERA_SLIDE step={step + 1} ok=False', flush=True)
+                        break
+                    raw = answer
+                    address = next((line.split(':', 1)[1] for line in answer.decode('utf-8', 'replace').splitlines()
+                                    if line.startswith('a=DEVADDR:')), '?')
+                    print(f'CAMERA_SLIDE step={step + 1} ok=True devaddr={address}', flush=True)
                 save_dialog(dialog_file, {'call_id': call, 'from_tag': tag, 'to': to, 'target': target,
                                           'routes': routes, 'cseq': cseq})
             if not accepted:
@@ -731,6 +771,18 @@ def main():
             decoder.close()
             valid = decoder.frame.exists() and decoder.frame.stat().st_size > 0
             print(f'FRAME_SAVED={valid}')
+            target_frame = os.environ.get('BTICINO_CAMERA_FRAME')
+            if valid and target_frame:
+                # Latest picture of this camera, for previews that must not call it.
+                try:
+                    destination = Path(target_frame)
+                    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    temporary = destination.with_suffix('.tmp')
+                    shutil.copyfile(decoder.frame, temporary)
+                    temporary.chmod(0o600)
+                    temporary.replace(destination)
+                except OSError:
+                    pass
             if valid and args.decode_frame:
                 print(f'Fotogramma privato: {decoder.frame}')
             else:

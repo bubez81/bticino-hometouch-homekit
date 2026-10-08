@@ -62,9 +62,13 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
   it after about a minute and the plugin opens a new one.
 - **Gates:** each lock opens its gate for a few seconds and returns to locked
   (there is no lock sensor).
-- **Home Assistant:** enable *Home Assistant* in the settings; the log shows
-  where the access token is. Then install the `bticino_hometouch` integration
-  from HACS with the Homebridge host, port `8790` and that token.
+- **Home Assistant:** use the `bticino_hometouch` integration from HACS on its
+  own; it does not need this plugin (see the
+  [Home Assistant guide](https://github.com/bubez81/bticino-hometouch-homekit/blob/main/docs/home-assistant.md)).
+- **Second camera:** if your entrance panel has a second camera (the one the
+  Door Entry app shows with its arrow), it appears in Apple Home as a separate
+  camera, *Esterno* by default; rename or hide it in the plugin settings. Its
+  preview is the latest picture seen in its live view.
 
 ## Updating and removing
 

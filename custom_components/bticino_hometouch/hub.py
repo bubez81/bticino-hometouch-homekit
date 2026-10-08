@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import asyncio
 import logging
 from collections.abc import Callable
@@ -30,6 +32,9 @@ class HometouchHub:
         self.snapshot_version = 0
         self.live_url: str | None = None
         self.talk_url: str | None = None
+        # Second camera of the entrance panel (Tvcc): live URL and latest picture.
+        self.second_live_url: str | None = None
+        self.second_frame: Path | None = None
         self._listeners: list[Listener] = []
         self._task: asyncio.Task | None = None
 

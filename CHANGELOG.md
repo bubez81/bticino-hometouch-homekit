@@ -7,6 +7,23 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-08
 
+### Added (plugin 0.10.0, Home Assistant 0.3.0): second camera
+
+- The entrance panel's next camera (a Tvcc camera, which the Door Entry app
+  shows with its camera arrow) is now available. Found in the app: the arrow
+  re-INVITEs the call with `a=DEVADDR:<panel>` and `a=CAMERASLIDING:1`; the
+  gateway answers with the next camera's address. The camera probe does this
+  right after the panel answers (`--camera 1`, IPC `start_call` `camera`), so
+  the stream starts on that camera. Verified on the test installation: the
+  gateway answered `DEVADDR:21` and the video showed the outdoor camera.
+- Apple Home: a separate camera in the Homebridge bridge (no new pairing),
+  named *Esterno* by default (`secondCameraName`, `secondCamera: false` to
+  hide it). Home Assistant: a second camera entity (option *Name of the second
+  camera*) and an arrow in the dashboard card to switch camera. Both appear
+  only when the system has a Tvcc camera.
+- Previews of the second camera show the latest picture of its live view
+  (`snapshots/cameras/camera-1.jpg`): previews never call the camera.
+
 ### Fixed (plugin 0.9.7, Home Assistant 0.2.3)
 
 - Camera calls left a private temporary folder (`bticino-video-probe-*`,

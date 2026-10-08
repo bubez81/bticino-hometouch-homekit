@@ -81,17 +81,44 @@ class BticinoHometouchCard extends HTMLElement {
       </ha-card>`;
     this._controls = root.querySelector(".controls");
     this._status = root.querySelector(".status");
+    this._videoBox = root.querySelector(".video");
+    this._camera = this._config.entity;
+    await this._showCamera(this._camera);
+    this._renderButtons();
+  }
+
+  async _showCamera(entityId) {
     try {
       const helpers = await window.loadCardHelpers();
-      this._video = await helpers.createCardElement({
-        type: "picture-entity", entity: this._config.entity, camera_view: "live",
+      const video = await helpers.createCardElement({
+        type: "picture-entity", entity: entityId, camera_view: "live",
         show_name: false, show_state: false, tap_action: { action: "more-info" },
       });
-      this._video.hass = this._hass;
-      root.querySelector(".video").appendChild(this._video);
+      video.hass = this._hass;
+      this._videoBox.replaceChildren(video);
+      this._video = video;
+      this._camera = entityId;
     } catch (err) {
       this._setStatus(String(err));
     }
+  }
+
+  // The entrance panel's cameras: the configured one first, then the others of the same device.
+  _cameras() {
+    const hass = this._hass;
+    const main = this._config.entity;
+    const camera = hass.entities && hass.entities[main];
+    const others = camera && camera.device_id ? Object.values(hass.entities)
+      .filter((e) => e.device_id === camera.device_id && e.entity_id.startsWith("camera.") && e.entity_id !== main)
+      .map((e) => e.entity_id).sort() : [];
+    return [main, ...others];
+  }
+
+  async _nextCamera() {
+    const cameras = this._cameras();
+    const next = cameras[(cameras.indexOf(this._camera) + 1) % cameras.length];
+    this._signature = null;
+    await this._showCamera(next);
     this._renderButtons();
   }
 
@@ -116,6 +143,13 @@ class BticinoHometouchCard extends HTMLElement {
       items.push([this._t("answer"), "main", () => this._answer()]);
     } else {
       items.push([this._talking ? this._t("stop") : this._t("talk"), "main", () => this._toggleMic()]);
+    }
+    const cameras = this._cameras();
+    if (cameras.length > 1 && !answered && !ringing) {
+      const next = cameras[(cameras.indexOf(this._camera) + 1) % cameras.length];
+      const state = this._hass.states[next];
+      const label = state ? (state.attributes.friendly_name || next).replace(/^Videocitofono\s+/, "") : next;
+      items.push([`▶ ${label}`, "", () => this._nextCamera()]);
     }
     for (const entityId of this._openButtons()) {
       const state = this._hass.states[entityId];

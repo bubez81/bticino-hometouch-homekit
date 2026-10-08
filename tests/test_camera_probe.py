@@ -307,6 +307,55 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(plis), probe.KEYFRAME_REQUESTS)
         self.assertTrue(all(addr[0] == '192.0.2.1' for addr in plis))
 
+    def test_camera_option_slides_to_the_next_camera_before_video(self):
+        sent = []
+        class Sock:
+            def bind(self, *a): pass
+            def sendto(self, *a): pass
+            def close(self): pass
+            def setblocking(self, *a): pass
+            def recv(self, *a): raise BlockingIOError()
+        class Client:
+            username = 'test'
+            account = 'test@gateway.example'
+            local_ip = '127.0.0.1'
+            local_port = 12345
+            sock = Sock()
+            def connect(self): pass
+            def send(self, msg): sent.append(msg)
+            def respond_basic(self, *a): pass
+            @property
+            def stream(self): return self
+            def read_message(self, timeout):
+                msg = sent[-1]
+                if not msg.startswith('INVITE'):
+                    raise socket.timeout()
+                call = next(x for x in msg.splitlines() if x.startswith('Call-ID:'))
+                seq = next(x for x in msg.splitlines() if x.startswith('CSeq:'))
+                address = '21' if 'CAMERASLIDING' in msg else '20'
+                body = f'v=0\r\nc=IN IP4 192.0.2.1\r\na=DEVADDR:{address}\r\nm=video 30000 RTP/SAVP 96\r\n'
+                return ('SIP/2.0 200 OK\r\n'+call+'\r\n'+seq+'\r\nTo: <sip:MHT@gateway.example>;tag=remote\r\nContact: <sip:MHT@gateway.example>\r\n\r\n'+body).encode()
+        import socket
+        def headers(raw):
+            return {k.lower(): v.strip() for k, v in (x.split(':', 1) for x in raw.decode().splitlines()[1:] if ':' in x)}, {}
+        lib = SimpleNamespace(HomtouchListener=Client, DOMAIN='example', RUNTIME_DIR=tempfile.mkdtemp(),
+                              sip_headers=headers, status_code=lambda raw: 200,
+                              sip_first_line=lambda raw: raw.decode().splitlines()[0])
+        ticks = iter(i * 0.25 for i in range(4000))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'candidates.json'
+            path.write_text(json.dumps({'candidates': [{'cid': '10050', 'devaddr': '20'}]}))
+            with patch.object(probe.importlib.util, 'module_from_spec', return_value=lib), patch.object(probe.importlib.util, 'spec_from_file_location', return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda m: None))), patch.object(probe.socket, 'socket', return_value=Sock()), patch.object(probe.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(probe.time, 'sleep'), patch.object(probe.signal, 'signal'), patch('sys.argv', ['probe', '--candidates', str(path), '--candidate', '1', '--camera', '1', '--stream', '--duration', '5']), patch.object(probe, 'FrameDecoder', side_effect=RuntimeError('no decoder')), redirect_stdout(io.StringIO()) as out:
+                probe.main()
+        self.assertIn('CAMERA_SLIDE step=1 ok=True devaddr=21', out.getvalue())
+        invites = [m for m in sent if m.startswith('INVITE')]
+        self.assertEqual(len(invites), 2)
+        self.assertIn('a=CAMERASLIDING:1', invites[1])
+        self.assertIn('CSeq: 2 INVITE', invites[1])
+        self.assertEqual([m.split()[0] for m in sent][:5], ['INVITE', 'ACK', 'INVITE', 'ACK', 'BYE'])
+        # The fake gateway never answers BYE, so the probe repeats it: always after the slide's CSeq.
+        self.assertTrue(all('CSeq: 3 BYE' in m for m in sent if m.startswith('BYE')))
+
     def test_lost_connection_reconnects_and_ends_call(self):
         sent, connects = [], []
         class Sock:

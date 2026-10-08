@@ -99,10 +99,12 @@
         "description": "Un pulsante di apertura per ingresso: nome e indirizzo della serratura, separati da virgole. Esempio: `Scala=20, Esterno=21` (la serratura del posto esterno di solito è 20, una seconda 21).",
         "data": {
           "entrances": "Ingressi",
-          "gateway": "Indirizzo del gateway (rete locale)"
+          "gateway": "Indirizzo del gateway (rete locale)",
+          "second_camera_name": "Nome della seconda telecamera"
         },
         "data_description": {
-          "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50; serve per il live, perché il server cloud rifiuta le chiamate alla telecamera. Vuoto: trovato in automatico alla prossima suonata."
+          "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50; serve per il live, perché il server cloud rifiuta le chiamate alla telecamera. Vuoto: trovato in automatico alla prossima suonata.",
+          "second_camera_name": "La telecamera successiva del posto esterno (la freccia dell'app Door Entry); compare solo se l'impianto ce l'ha."
         }
       }
     },

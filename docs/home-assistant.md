@@ -75,7 +75,14 @@ live view and:
 - **Answer** while someone is ringing: answers the call, turns the microphone
   on and plays the panel's sound through the card; **Hang up** ends it (the
   panel ends answered calls after about a minute);
-- one button per gate, with a confirmation.
+- one button per gate, with a confirmation;
+- **▶ Esterno** (or the name you chose): switches to the entrance panel's
+  second camera, when the system has one.
+
+If your entrance panel has a second camera (the one the Door Entry app shows
+with its arrow), the integration adds a second camera entity, *Esterno* by
+default (**Configure** → *Name of the second camera*). Its picture is the
+latest one seen in its live view.
 
 The browser gives the card the microphone only when Home Assistant is opened
 over **HTTPS** (for example through Home Assistant Cloud or your own

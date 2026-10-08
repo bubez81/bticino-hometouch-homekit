@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const { ListenerSupervisor } = require('./supervisor');
 const { addEntranceLocks, normalizeEntrances } = require('./entrance-locks');
 const { PluginLog, teeLogger } = require('./plugin-log');
+const { SecondCamera } = require('./second-camera');
 const managers = new WeakMap();
 const cameraKey = config => JSON.stringify([config.ipcSocket || '/tmp/bticino-hometouch.sock', config.name || 'BTicino HOMETOUCH']);
 
@@ -59,6 +60,13 @@ class BTicinoPlatform {
       ffmpegPath: ffmpeg, audioFfmpegPath: ffmpeg, liveAudio: this.config.liveAudio !== false,
       entrances, serialNumber: this.config.serialNumber,
     }, api);
+    // A second camera of the entrance panel (Tvcc), inside the bridge.
+    this.cachedAccessories = this.cachedAccessories || new Map();
+    this.secondCamera = new SecondCamera({api, log, storage, config: this.config, socket: this.supervisor.socket,
+      ffmpeg, cached: this.cachedAccessories, resize: resizeSnapshot});
+    api.on('didFinishLaunching', () => {
+      try { this.secondCamera.setup(); } catch (err) { log.error(`Second camera: ${err.message}`); }
+    });
     api.on('shutdown', () => this.supervisor.stop());
   }
 
@@ -78,7 +86,11 @@ class BTicinoPlatform {
       ...(ha.liveRtspUrl ? {live_rtsp_url: ha.liveRtspUrl} : {})};
   }
 
-  configureAccessory() {}
+  // Accessories restored from Homebridge's cache (the second camera).
+  configureAccessory(accessory) {
+    this.cachedAccessories = this.cachedAccessories || new Map();
+    this.cachedAccessories.set(accessory.UUID, accessory);
+  }
 }
 
 class BTicinoCallLock {
