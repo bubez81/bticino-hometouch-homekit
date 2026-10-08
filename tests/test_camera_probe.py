@@ -234,6 +234,27 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual([m.split()[0] for m in sent], ['INVITE', 'ACK', 'BYE'])
         self.assertIn('termination_confirmed=True', out.getvalue())
 
+    def test_stale_temporary_folders_are_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            old = base / (probe.TEMP_PREFIX + 'old'); old.mkdir(); (old / 'frame.jpg').write_bytes(b'x')
+            new = base / (probe.TEMP_PREFIX + 'new'); new.mkdir()
+            other = base / 'something-else'; other.mkdir()
+            import os
+            os.utime(old, (0, 0))
+            probe.remove_stale_temporaries(base, now=probe.STALE_TEMP_SECONDS + 10)
+            self.assertFalse(old.exists())
+            self.assertTrue(new.exists() and other.exists())
+
+    def test_live_call_frame_folder_is_discarded(self):
+        decoder = probe.FrameDecoder.__new__(probe.FrameDecoder)
+        with tempfile.TemporaryDirectory() as tmp:
+            decoder.directory = Path(tmp) / (probe.TEMP_PREFIX + 'x')
+            decoder.directory.mkdir()
+            (decoder.directory / 'frame.jpg').write_bytes(b'x')
+            decoder.discard()
+            self.assertFalse(decoder.directory.exists())
+
     def test_keyframe_is_requested_when_video_starts(self):
         sent, plis = [], []
         rtp = bytes([0x80, 96]) + bytes(10)

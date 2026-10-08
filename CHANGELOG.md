@@ -5,6 +5,16 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-10-08
+
+### Fixed (plugin 0.9.7, Home Assistant 0.2.3)
+
+- Camera calls left a private temporary folder (`bticino-video-probe-*`,
+  with the call's key file and a frame of the camera) after every call: 113
+  were found on the test installation. The folder is now removed when the call
+  ends (kept only with `--decode-frame`, for manual tests), and folders older
+  than one hour left by interrupted calls are removed when a call starts.
+
 ## 2026-10-07
 
 ### Added
