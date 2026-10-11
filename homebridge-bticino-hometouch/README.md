@@ -66,9 +66,11 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
   own; it does not need this plugin (see the
   [Home Assistant guide](https://github.com/bubez81/bticino-hometouch-homekit/blob/main/docs/home-assistant.md)).
 - **Second camera:** if your entrance panel has a second camera (the one the
-  Door Entry app shows with its arrow), it appears in Apple Home as a separate
-  camera, *Esterno* by default; rename or hide it in the plugin settings. Its
-  preview is the latest picture seen in its live view.
+  Door Entry app shows with its arrow), the plugin publishes it as a separate
+  camera, *Esterno* by default: add it once in Apple Home (*Add Accessory* →
+  *More options* → *Esterno*, with the Homebridge setup code). Rename or hide it
+  in the plugin settings. Its preview is the latest picture seen in its live
+  view.
 
 ## Updating and removing
 

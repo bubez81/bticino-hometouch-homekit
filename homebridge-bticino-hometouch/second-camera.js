@@ -1,7 +1,8 @@
 'use strict';
 // A second camera of the same entrance panel (a TVCC camera, which the Door
-// Entry app reaches with its camera arrow). It is a plain Camera accessory in
-// the Homebridge bridge, so it appears in Apple Home without a new pairing.
+// Entry app reaches with its camera arrow), published as its own HomeKit
+// accessory like the doorbell: inside the bridge, Apple Home showed it as not
+// responding and never asked it for video (observed on iOS).
 // Previews show the latest picture of a live view of that camera: requesting a
 // call for every preview would tire the gateway.
 const fs = require('node:fs');
@@ -49,21 +50,20 @@ class SecondCamera {
   constructor({api, log, storage, config, socket, ffmpeg, cached, resize}) {
     Object.assign(this, {api, log, storage, config, socket, ffmpeg, cached, resize});
     this.name = secondCameraName(config);
-    this.uuid = api.hap.uuid.generate('bticino-hometouch-camera-1');
+    // Earlier versions put it in the bridge (this UUID); it is removed from there.
+    this.bridgedUuid = api.hap.uuid.generate('bticino-hometouch-camera-1');
+    this.uuid = api.hap.uuid.generate('bticino-hometouch-camera-1-external');
     this.frame = path.join(storage, 'snapshots', 'cameras', 'camera-1.jpg');
   }
 
   // Called after Homebridge restored its cached accessories.
   setup() {
     const enabled = this.config.secondCamera !== false && hasSecondCamera(this.storage);
-    const existing = this.cached.get(this.uuid);
-    if (!enabled) {
-      if (existing) this.api.unregisterPlatformAccessories(PLUGIN, PLATFORM, [existing]);
-      return null;
-    }
+    const bridged = this.cached.get(this.bridgedUuid);
+    if (bridged) this.api.unregisterPlatformAccessories(PLUGIN, PLATFORM, [bridged]);
+    if (!enabled) return null;
     const {hap} = this.api;
-    const accessory = existing || new this.api.platformAccessory(this.name, this.uuid, hap.Categories.CAMERA);
-    accessory.displayName = this.name;
+    const accessory = new this.api.platformAccessory(this.name, this.uuid, hap.Categories.CAMERA);
     accessory.getService(hap.Service.AccessoryInformation)
       .setCharacteristic(hap.Characteristic.Manufacturer, 'BTicino')
       .setCharacteristic(hap.Characteristic.Model, 'HOMETOUCH Tvcc')
@@ -83,9 +83,10 @@ class SecondCamera {
         },
       },
     }));
-    if (!existing) this.api.registerPlatformAccessories(PLUGIN, PLATFORM, [accessory]);
+    // Own HomeKit accessory: added once in Apple Home with the bridge's setup code.
+    this.api.publishExternalAccessories(PLUGIN, [accessory]);
     this.api.on('shutdown', () => this.streamManager.closeAll().catch(() => {}));
-    this.log.info(`BTicino HOMETOUCH second camera published: ${this.name}`);
+    this.log.info(`BTicino HOMETOUCH second camera published as its own accessory: ${this.name}`);
     return accessory;
   }
 

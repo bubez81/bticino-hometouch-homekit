@@ -17,10 +17,10 @@ class PlatformAccessory {
   getService() { return this.info; }
   configureController(controller) { this.controllers.push(controller); }
 }
-const registered = [], unregistered = [];
+const published = [], unregistered = [];
 const api = {
   on() {}, platformAccessory: PlatformAccessory,
-  registerPlatformAccessories(_p, _n, list) { registered.push(...list); },
+  publishExternalAccessories(_p, list) { published.push(...list); },
   unregisterPlatformAccessories(_p, _n, list) { unregistered.push(...list); },
   hap: {Service: {AccessoryInformation}, Characteristic: {Manufacturer: 'm', Model: 'mo', SerialNumber: 's'},
     CameraController, Categories: {CAMERA: 17}, uuid: {generate: value => `uuid:${value}`}},
@@ -38,15 +38,15 @@ const candidates = list => fs.writeFileSync(path.join(storage, 'camera-candidate
   assert.equal(hasSecondCamera(storage), false);
   const none = new SecondCamera({api, log, storage, config: {}, socket: '/tmp/x.sock', ffmpeg: 'ffmpeg', cached: new Map(), resize: async (_ffmpeg, image) => image});
   assert.equal(none.setup(), null);
-  assert.equal(registered.length, 0);
+  assert.equal(published.length, 0);
 
-  // Tvcc present: one Camera accessory in the bridge, with the chosen name.
+  // Tvcc present: one Camera accessory of its own, with the chosen name.
   candidates([{cid: '10050', devaddr: '20'}, {cid: '10061', devaddr: '20'}]);
   const camera = new SecondCamera({api, log, storage, config: {secondCameraName: 'Cancello'}, socket: '/tmp/x.sock', ffmpeg: 'ffmpeg', cached: new Map(), resize: async (_ffmpeg, image) => image});
   const accessory = camera.setup();
   assert.equal(accessory.displayName, 'Cancello');
   assert.equal(accessory.category, 17);
-  assert.equal(registered.length, 1);
+  assert.deepEqual(published, [accessory]);
   assert.equal(accessory.controllers.length, 1);
   assert.equal(camera.streamManager.config.camera, 1);
 
@@ -58,12 +58,16 @@ const candidates = list => fs.writeFileSync(path.join(storage, 'camera-candidate
   assert.equal(snapshot.toString(), 'jpeg-of-camera-1');
   assert.equal(calls.filter(c => c.command === 'start_call').length, 0);
 
-  // Restored from cache: reused, not registered twice; disabled: removed.
-  const cached = new Map([[accessory.UUID, accessory]]);
-  new SecondCamera({api, log, storage, config: {}, socket: '/tmp/x.sock', ffmpeg: 'ffmpeg', cached, resize: async (_ffmpeg, image) => image}).setup();
-  assert.equal(registered.length, 1);
-  new SecondCamera({api, log, storage, config: {secondCamera: false}, socket: '/tmp/x.sock', ffmpeg: 'ffmpeg', cached, resize: async (_ffmpeg, image) => image}).setup();
-  assert.deepEqual(unregistered, [accessory]);
+  // A copy left in the bridge by 0.10.0 is removed from there.
+  const old = {UUID: 'uuid:bticino-hometouch-camera-1'};
+  new SecondCamera({api, log, storage, config: {}, socket: '/tmp/x.sock', ffmpeg: 'ffmpeg',
+    cached: new Map([[old.UUID, old]]), resize: async (_ffmpeg, image) => image}).setup();
+  assert.deepEqual(unregistered, [old]);
+  // Disabled: nothing published.
+  const before = published.length;
+  assert.equal(new SecondCamera({api, log, storage, config: {secondCamera: false}, socket: '/tmp/x.sock', ffmpeg: 'ffmpeg',
+    cached: new Map(), resize: async (_ffmpeg, image) => image}).setup(), null);
+  assert.equal(published.length, before);
 
   fs.rmSync(storage, {recursive: true, force: true});
   console.log('SECOND_CAMERA_OK (mock HAP only)');
