@@ -7,6 +7,15 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-08
 
+### Fixed (plugin 0.10.1)
+
+- The second camera is published as its own HomeKit accessory, like the
+  doorbell. Inside the Homebridge bridge, Apple Home showed it as not
+  responding and never asked it for a picture or a live view, although the
+  bridge served it correctly (checked through HAP). It is added once in Apple
+  Home with the bridge's setup code; the copy left in the bridge by 0.10.0 is
+  removed automatically.
+
 ### Fixed (Home Assistant 0.3.4)
 
 - The second camera's live view started late in Home Assistant: after the
