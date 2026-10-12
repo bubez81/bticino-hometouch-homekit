@@ -7,6 +7,14 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-12
 
+### Added (Home Assistant 0.3.5)
+
+- A warning in *Repairs* when the HOMETOUCH keeps closing the connection (6
+  times in 10 minutes), with the events `gateway_unstable` and
+  `gateway_stable` for automations. Observed for a whole day on the test
+  installation: the connection dropped every 16 seconds until the HOMETOUCH
+  was restarted, and a gate opening was lost.
+
 ### Fixed (plugin 0.10.2)
 
 - The second camera stayed white and crossed out in Apple Home and was never
