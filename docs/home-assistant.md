@@ -129,7 +129,19 @@ camera. Title, message and sound can be changed.
 
 Every listener event is also fired on the bus as `bticino_hometouch_event`
 (`type`: `ring`, `entrance_detected`, `snapshot_ready`, `call_ended`,
-`entrance_open`, `sip_registered`, `sip_disconnected`).
+`entrance_open`, `sip_registered`, `sip_disconnected`, `gateway_unstable`,
+`gateway_stable`).
+
+## When the HOMETOUCH keeps dropping the connection
+
+The HOMETOUCH can get stuck closing the phone's connection a few seconds after
+every registration; meanwhile rings and gate openings are lost. When that
+happens 6 times in 10 minutes, Home Assistant shows a warning in
+*Settings → Repairs* and fires `gateway_unstable`: restart the HOMETOUCH (the
+video door entry unit, not the MyHOME server). The warning goes away by itself
+once the connection stays up for 15 minutes (`gateway_stable`). For a push
+notification on your phone, trigger an automation on the event
+`bticino_hometouch_event` with `type: gateway_unstable`.
 
 ## Updating and removing
 
@@ -146,7 +158,7 @@ Every listener event is also fired on the bus as `bticino_hometouch_event`
 | The live view does not start | Ring once so the gateway at home is found, or enter its address under **Configure**; the log line `Live: no video from the camera` includes the camera call's details |
 | Camera calls fail with `407` in the log | The phone is connected to the cloud server: ring once or set the gateway's address under **Configure** |
 | Authentication errors after changes in the Door Entry app | ⋮ on the integration → **Reconfigure**: sign in again and the phone's credentials are re-read from the cloud (nothing new is created) |
-| A gate does not open | Check its address under **Configure** → **Entrances** |
+| A gate does not open | Check its address under **Configure** → **Entrances**; if *Repairs* says the HOMETOUCH keeps dropping the connection, restart the HOMETOUCH |
 | No notification | Check the automation made from the blueprint and the Companion app's notification permissions |
 | The card says the microphone works only over HTTPS | Open Home Assistant through its HTTPS address |
 | The card is missing from *Add card* | Reload the page (the card is added by the integration at start-up) |

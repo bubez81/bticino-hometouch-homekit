@@ -6,17 +6,27 @@ from pathlib import Path
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later
 
 from .api import ApiError, AuthError, HometouchApi
-from .const import BUS_EVENT, RECONNECT_MAX_SECONDS, RECONNECT_MIN_SECONDS
+from .const import BUS_EVENT, DOMAIN, RECONNECT_MAX_SECONDS, RECONNECT_MIN_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
 Listener = Callable[[dict[str, Any] | None], None]
+
+# The HOMETOUCH can get stuck closing the phone's connection a few seconds
+# after every registration (observed: every 16 s for a whole day, until it was
+# restarted); rings and openings are then lost. A few drops a day are normal.
+UNSTABLE_DROPS = 6
+UNSTABLE_WINDOW = 600
+STABLE_AFTER = 900
 
 
 class HometouchHub:
@@ -37,6 +47,13 @@ class HometouchHub:
         self.second_frame: Path | None = None
         self._listeners: list[Listener] = []
         self._task: asyncio.Task | None = None
+        self.gateway_unstable = False
+        self._drops: list[float] = []
+        self._cancel_stable: Callable[[], None] | None = None
+
+    @property
+    def issue_id(self) -> str:
+        return f"gateway_unstable_{self.entry_id}"
 
     @property
     def entrances(self) -> list[str]:
@@ -53,10 +70,15 @@ class HometouchHub:
             listener(event)
 
     async def async_start(self) -> None:
+        # A warning left from before a restart comes back by itself if still true.
+        ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
         self.state = await self.api.state()
         self._task = self.hass.async_create_background_task(self._run(), f"{BUS_EVENT}_stream")
 
     async def async_stop(self) -> None:
+        if self._cancel_stable:
+            self._cancel_stable()
+            self._cancel_stable = None
         if self._task:
             self._task.cancel()
             try:
@@ -94,6 +116,7 @@ class HometouchHub:
             self.state["sip_registered"] = True
         elif kind == "sip_disconnected":
             self.state["sip_registered"] = False
+            self._connection_dropped()
         elif kind == "ring":
             self.state["call_active"] = True
             self.state["last_ring"] = {"time": event.get("time"), "call": event.get("call"), "entrance": None}
@@ -113,3 +136,33 @@ class HometouchHub:
                 **{k: v for k, v in event.items() if k in ("time", "call", "entrance", "reason", "result")},
             })
         self._notify(event)
+
+    @callback
+    def _connection_dropped(self) -> None:
+        now = time.monotonic()
+        self._drops = [t for t in self._drops if now - t < UNSTABLE_WINDOW] + [now]
+        if self._cancel_stable:
+            self._cancel_stable()
+        self._cancel_stable = async_call_later(self.hass, STABLE_AFTER, self._connection_stable)
+        if self.gateway_unstable or len(self._drops) < UNSTABLE_DROPS:
+            return
+        self.gateway_unstable = True
+        _LOGGER.warning("The HOMETOUCH closed the connection %d times in %d minutes: restart it",
+                        len(self._drops), UNSTABLE_WINDOW // 60)
+        ir.async_create_issue(
+            self.hass, DOMAIN, self.issue_id, is_fixable=False,
+            severity=ir.IssueSeverity.ERROR, translation_key="gateway_unstable",
+            translation_placeholders={"drops": str(len(self._drops)), "minutes": str(UNSTABLE_WINDOW // 60)},
+        )
+        self.hass.bus.async_fire(BUS_EVENT, {"entry_id": self.entry_id, "type": "gateway_unstable"})
+
+    @callback
+    def _connection_stable(self, _now: Any) -> None:
+        self._cancel_stable = None
+        self._drops.clear()
+        if not self.gateway_unstable:
+            return
+        self.gateway_unstable = False
+        _LOGGER.info("Connection to the HOMETOUCH stable again")
+        ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
+        self.hass.bus.async_fire(BUS_EVENT, {"entry_id": self.entry_id, "type": "gateway_stable"})
