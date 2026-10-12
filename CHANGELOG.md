@@ -5,6 +5,16 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-10-12
+
+### Fixed (plugin 0.10.2)
+
+- The second camera stayed white and crossed out in Apple Home and was never
+  asked for a picture or a live view. Unlike the doorbell it had no Microphone
+  service, which Apple Home expects on every camera (compared through HAP).
+  It now declares an audio codec, which adds that service; the camera still
+  sends no sound. Verified on iOS: the live view starts.
+
 ## 2026-10-08
 
 ### Fixed (plugin 0.10.1)
