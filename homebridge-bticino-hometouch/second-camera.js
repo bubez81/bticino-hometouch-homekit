@@ -77,6 +77,10 @@ class SecondCamera {
       streamingOptions: {
         proxy: false,
         supportedCryptoSuites: [0],
+        // Apple Home treats a camera without a Microphone service as broken (white,
+        // crossed out, never asked for video): declaring an audio codec adds it,
+        // even though this camera sends no sound.
+        audio: {codecs: [{type: 'OPUS', samplerate: 24, audioChannels: 1}], twoWayAudio: false},
         video: {
           codec: {profiles: [0, 1, 2], levels: [0, 1, 2]},
           resolutions: [[1280, 720, 30], [640, 480, 30], [640, 360, 30], [320, 240, 30], [320, 240, 15], [320, 180, 30]],

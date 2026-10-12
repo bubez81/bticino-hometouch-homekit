@@ -49,6 +49,8 @@ const candidates = list => fs.writeFileSync(path.join(storage, 'camera-candidate
   assert.deepEqual(published, [accessory]);
   assert.equal(accessory.controllers.length, 1);
   assert.equal(camera.streamManager.config.camera, 1);
+  // A Microphone service is required by Apple Home: the controller declares audio.
+  assert.equal(accessory.controllers[0].options.streamingOptions.audio.codecs[0].type, 'OPUS');
 
   // Previews come from the latest picture of that camera, never from a new call.
   fs.mkdirSync(path.dirname(camera.frame), {recursive: true});
