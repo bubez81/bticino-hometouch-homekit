@@ -23,10 +23,11 @@ Listener = Callable[[dict[str, Any] | None], None]
 
 # The HOMETOUCH can get stuck closing the phone's connection a few seconds
 # after every registration (observed: every 16 s for a whole day, until it was
-# restarted); rings and openings are then lost. A few drops a day are normal.
+# restarted); rings and openings are then lost. A drop about every 17 minutes
+# is normal, so the warning clears after 5 minutes without one.
 UNSTABLE_DROPS = 6
 UNSTABLE_WINDOW = 600
-STABLE_AFTER = 900
+STABLE_AFTER = 300
 
 
 class HometouchHub:
