@@ -116,7 +116,7 @@
   "issues": {
     "gateway_unstable": {
       "title": "Il HOMETOUCH continua a chiudere il collegamento",
-      "description": "Il HOMETOUCH ha chiuso il collegamento di Home Assistant {drops} volte in {minutes} minuti. Nel frattempo suonate e aperture dei cancelli possono andare perse.\n\nRiavvia il HOMETOUCH (il videocitofono di casa, non il server MyHOME). Questo avviso sparisce da solo quando il collegamento resta su per 15 minuti."
+      "description": "Il HOMETOUCH ha chiuso il collegamento di Home Assistant {drops} volte in {minutes} minuti. Nel frattempo suonate e aperture dei cancelli possono andare perse.\n\nRiavvia il HOMETOUCH (il videocitofono di casa, non il server MyHOME). Questo avviso sparisce da solo quando il collegamento resta su per 5 minuti."
     }
   }
 }

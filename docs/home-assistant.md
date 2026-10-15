@@ -139,7 +139,7 @@ every registration; meanwhile rings and gate openings are lost. When that
 happens 6 times in 10 minutes, Home Assistant shows a warning in
 *Settings → Repairs* and fires `gateway_unstable`: restart the HOMETOUCH (the
 video door entry unit, not the MyHOME server). The warning goes away by itself
-once the connection stays up for 15 minutes (`gateway_stable`). For a push
+once the connection stays up for 5 minutes (`gateway_stable`). For a push
 notification on your phone, trigger an automation on the event
 `bticino_hometouch_event` with `type: gateway_unstable`.
 

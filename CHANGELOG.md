@@ -5,6 +5,16 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-10-15
+
+### Fixed (Home Assistant 0.3.6)
+
+- The warning about the HOMETOUCH dropping the connection could stay after the
+  connection recovered: it waited for 15 minutes without drops, but a normal
+  connection drops about every 17 minutes, so the wait could be cut short by a
+  normal drop. It now clears after 5 minutes without drops (during the fault
+  they come every 16 seconds).
+
 ## 2026-10-12
 
 ### Added (Home Assistant 0.3.5)
