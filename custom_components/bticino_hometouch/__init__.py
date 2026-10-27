@@ -122,13 +122,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry) ->
             sources["_view"] = True
         source = sources[entry.entry_id] = LiveSource(runtime.socket)
         hub.live_url = source.url(hass, entry.entry_id)
+        frames = runtime.storage / "snapshots" / "cameras"
+        hub.sources[0], hub.frames[0] = source, frames / "camera-0.jpg"
         hub.talk_url = TALK_URL.format(entry_id=entry.entry_id)
         second_key = f"{entry.entry_id}_1"
         if await hass.async_add_executor_job(has_second_camera, runtime.storage):
             second = sources[second_key] = LiveSource(runtime.socket, camera=1)
             source.siblings = second.siblings = [source, second]
             hub.second_live_url = second.url(hass, second_key)
-            hub.second_frame = runtime.storage / "snapshots" / "cameras" / "camera-1.jpg"
+            hub.second_frame = hub.frames[1] = frames / "camera-1.jpg"
+            hub.sources[1] = second
 
         @callback
         def _forget_source() -> None:

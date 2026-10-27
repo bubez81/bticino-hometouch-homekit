@@ -60,6 +60,12 @@
     "button": {
       "open_entrance": {
         "name": "Open {entrance}"
+      },
+      "refresh_picture": {
+        "name": "Refresh picture"
+      },
+      "refresh_picture_named": {
+        "name": "Refresh picture {camera}"
       }
     },
     "camera": {

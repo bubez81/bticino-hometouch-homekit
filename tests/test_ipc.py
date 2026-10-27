@@ -51,7 +51,7 @@ class IpcTests(unittest.TestCase):
             self.assertTrue(bticino_ipc.handle_request(dict(base, audio=True, audio_port=40002))['ok'])
             self.assertEqual(spawn.call_args.kwargs['env']['BTICINO_LIVE_AUDIO_PORT'], '40002')
 
-    def test_start_call_selects_another_camera_and_keeps_its_frame(self):
+    def test_start_call_selects_the_camera_and_keeps_its_frame(self):
         with patch.object(bticino_ipc, '_incoming_state', None), patch.object(bticino_ipc, '_call_process', None), patch.dict('os.environ', BTICINO_IPC_ENABLE_CALLS='1'), patch.object(bticino_ipc.subprocess, 'Popen') as spawn:
             base = {'command': 'start_call', 'session_id': 's', 'video_port': 40000}
             for bad in (5, -1, '1', True):
@@ -64,7 +64,8 @@ class IpcTests(unittest.TestCase):
         with patch.object(bticino_ipc, '_incoming_state', None), patch.object(bticino_ipc, '_call_process', None), patch.dict('os.environ', BTICINO_IPC_ENABLE_CALLS='1'), patch.object(bticino_ipc.subprocess, 'Popen') as spawn:
             bticino_ipc.handle_request({'command': 'start_call', 'session_id': 's', 'video_port': 40000})
             self.assertNotIn('--camera', spawn.call_args.args[0])
-            self.assertNotIn('BTICINO_CAMERA_FRAME', spawn.call_args.kwargs['env'])
+            # The panel's own camera keeps its latest picture too (snapshots without a ring).
+            self.assertTrue(spawn.call_args.kwargs['env']['BTICINO_CAMERA_FRAME'].endswith('cameras/camera-0.jpg'))
 
     def test_stop_allows_sip_cleanup_before_kill(self):
         process = Mock()

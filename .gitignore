@@ -9,6 +9,7 @@ config.json
 *.pcap
 *.pcapng
 *.jpg
+!custom_components/bticino_hometouch/placeholder.jpg
 *.jpeg
 *.png
 !assets/project-banner.png

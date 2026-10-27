@@ -5,6 +5,23 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-10-27
+
+### Added (Home Assistant 0.3.7)
+
+- **Refresh picture** buttons, one per camera: a short camera call that only
+  renews the camera's picture (at most one every 30 seconds, never during a
+  live view or a ring).
+
+### Fixed (Home Assistant 0.3.7)
+
+- The camera's picture failed with HTTP 500 until the first ring after a
+  restart. It is now the newer of the last ring's picture and the last live
+  view's frame (the listener keeps the panel camera's frame too), or a neutral
+  picture when there is none. The second camera no longer shows the panel's
+  picture under its own name.
+- The dashboard card shows only opening buttons as gates.
+
 ## 2026-10-15
 
 ### Fixed (Home Assistant 0.3.6)

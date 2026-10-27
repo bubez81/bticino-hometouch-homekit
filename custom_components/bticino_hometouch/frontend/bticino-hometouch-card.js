@@ -128,7 +128,9 @@ class BticinoHometouchCard extends HTMLElement {
     const camera = hass.entities && hass.entities[this._config.entity];
     if (!camera || !camera.device_id) return [];
     return Object.values(hass.entities)
-      .filter((e) => e.device_id === camera.device_id && e.entity_id.startsWith("button."))
+      // Opening buttons carry their entrance; "Refresh picture" buttons do not.
+      .filter((e) => e.device_id === camera.device_id && e.entity_id.startsWith("button.")
+        && hass.states[e.entity_id]?.attributes?.entrance !== undefined)
       .map((e) => e.entity_id).sort();
   }
 

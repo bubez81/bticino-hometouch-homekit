@@ -46,6 +46,10 @@ class HometouchHub:
         # Second camera of the entrance panel (Tvcc): live URL and latest picture.
         self.second_live_url: str | None = None
         self.second_frame: Path | None = None
+        # Per camera (0: the entrance panel's, 1: the next one): its live source and
+        # the latest picture of its live views.
+        self.sources: dict[int, Any] = {}
+        self.frames: dict[int, Path] = {}
         self._listeners: list[Listener] = []
         self._task: asyncio.Task | None = None
         self.gateway_unstable = False
@@ -167,3 +171,13 @@ class HometouchHub:
         _LOGGER.info("Connection to the HOMETOUCH stable again")
         ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
         self.hass.bus.async_fire(BUS_EVENT, {"entry_id": self.entry_id, "type": "gateway_stable"})
+
+    async def async_refresh_picture(self, camera: int) -> str:
+        """A new picture of `camera` from a short call; returns why not, or ""."""
+        source, frame = self.sources.get(camera), self.frames.get(camera)
+        if source is None or frame is None:
+            return "not_available"
+        reason = await source.capture(frame)
+        if not reason:
+            self._notify({"type": "picture_updated", "camera": camera})
+        return reason
