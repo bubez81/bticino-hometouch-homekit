@@ -35,6 +35,10 @@ FIRST_VIDEO_TIMEOUT = 12.0
 STALL_TIMEOUT = 15.0
 CALL_COOLDOWN = 8.0
 SWITCH_ATTEMPTS = 6
+# "Refresh picture": a short call that only renews the camera's latest picture.
+CAPTURE_CACHE = 30.0
+CAPTURE_TIMEOUT = 10.0
+CAPTURE_SETTLE = 2.0
 URL = "/api/bticino_hometouch/live/{entry_id}"
 
 
@@ -70,6 +74,13 @@ async def _open_udp(port: int):
     return transport, protocol
 
 
+def _mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
 CALL_LOG_NOISE = ("[h264 @", "[s16le @", "Last message repeated", "no frame!", "non-existing PPS")
 
 
@@ -103,6 +114,7 @@ class LiveSource:
         self.active_session: str | None = None
         self.viewers: set[asyncio.Queue] = set()
         self.relay: asyncio.Task | None = None
+        self.capture_lock = asyncio.Lock()
 
     def url(self, hass: HomeAssistant, entry_id: str) -> str:
         port = hass.http.server_port if hass.http else 8123
@@ -189,12 +201,55 @@ class LiveSource:
                 await self._stop_call(session)
             self._send(None)
 
-    async def _start_call(self, session: str, port: int) -> dict:
+    def busy(self) -> bool:
+        """A live view of any camera of the entry is running (one call at a time)."""
+        return any(other.relay is not None and not other.relay.done() for other in self.siblings)
+
+    async def capture(self, frame: Path) -> str:
+        """Renew `frame` with a short camera call; returns why it did not, or "".
+
+        The listener copies the call's last decoded frame to `frame` when the call
+        ends. A live view in progress is never interrupted: its picture is saved
+        when it ends.
+        """
+        # One capture at a time for the whole entry: the gateway takes one call.
+        async with self.siblings[0].capture_lock:
+            before = await asyncio.get_running_loop().run_in_executor(None, _mtime, frame)
+            if before and time.time() - before < CAPTURE_CACHE:
+                return ""
+            if self.busy():
+                return "live_running"
+            wait = CALL_COOLDOWN - (time.monotonic() - self.last_call_end)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            session = f"ha-picture-{secrets.token_hex(6)}"
+            transport, protocol = await _open_udp(0)
+            started = False
+            try:
+                result = await self._start_call(session, transport.get_extra_info("sockname")[1], audio=False)
+                if not result.get("ok"):
+                    return str(result.get("error") or "call_failed")
+                started = True
+                self.active_session = session
+                try:
+                    await asyncio.wait_for(protocol.queue.get(), CAPTURE_TIMEOUT)
+                except asyncio.TimeoutError:
+                    return "no_video"
+                # A few decoded frames after the first packets: a complete picture.
+                await asyncio.sleep(CAPTURE_SETTLE)
+            finally:
+                transport.close()
+                if started:
+                    await self._stop_call(session)
+            after = await asyncio.get_running_loop().run_in_executor(None, _mtime, frame)
+            return "" if after and after != before else "no_picture"
+
+    async def _start_call(self, session: str, port: int, audio: bool = True) -> dict:
         # The other cameras are video only, as in the Door Entry app: after the switch
         # the gateway still sends the panel's sound, whose timestamps break the
         # player's packaging (observed), and it is not that camera's sound anyway.
         request = {"command": "start_call", "candidate": "1", "session_id": session, "video_port": port,
-                   **({"camera": self.camera} if self.camera else {"audio": True})}
+                   **({"camera": self.camera} if self.camera else {"audio": True} if audio else {})}
         for attempt in range(SWITCH_ATTEMPTS):
             try:
                 result = await ipc_request(self.socket_path, request)

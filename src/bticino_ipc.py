@@ -101,10 +101,10 @@ def handle_request(request: dict) -> dict:
             if request.get('audio') is True:
                 command.append("--audio")
             if camera:
-                # Another camera of the same entrance panel (the app's camera arrow);
-                # its latest picture is kept for previews that must not call it.
+                # Another camera of the same entrance panel (the app's camera arrow).
                 command += ["--camera", str(camera)]
-                environment["BTICINO_CAMERA_FRAME"] = str(SNAPSHOT_DIR / "cameras" / f"camera-{camera}.jpg")
+            # Each camera's latest picture is kept for previews that must not call it.
+            environment["BTICINO_CAMERA_FRAME"] = str(SNAPSHOT_DIR / "cameras" / f"camera-{camera}.jpg")
             log = open_camera_log(f"start_call candidate={candidate} audio={'--audio' in command}"
                                   + (f" camera={camera}" if camera else ""))
             try:

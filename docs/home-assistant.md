@@ -103,6 +103,19 @@ Players start muted: unmute them for the panel's sound.
 After many live views in a row the gateway may stop sending video for a few
 minutes; the integration then shows the latest picture instead of retrying.
 
+## Still picture
+
+The camera's picture, used by dashboards and notifications, is the newer of
+the last ring's picture and the last frame of a live view; it never calls the
+entrance panel by itself. Before the first ring or live view a neutral
+picture is shown. **Refresh picture** (one button per camera) takes a new one
+with a short camera call of about ten seconds: pressed again within 30
+seconds it keeps the fresh picture, and it never interrupts a live view or a
+ring. Refreshing the picture on a schedule, for example every few minutes,
+is possible with an automation, but every refresh is a camera call: the
+gateway takes one at a time and, after many, stops sending video for a
+while.
+
 ## Ring notification with the right gate
 
 Import the blueprint

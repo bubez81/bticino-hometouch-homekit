@@ -60,6 +60,12 @@
     "button": {
       "open_entrance": {
         "name": "Apri {entrance}"
+      },
+      "refresh_picture": {
+        "name": "Aggiorna foto"
+      },
+      "refresh_picture_named": {
+        "name": "Aggiorna foto {camera}"
       }
     },
     "camera": {

@@ -1,4 +1,4 @@
-"""One button per configured entrance: sends the opening pulse."""
+"""One button per configured entrance (opening pulse) and per camera (new picture)."""
 
 from __future__ import annotations
 
@@ -10,13 +10,27 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HometouchConfigEntry
 from .api import ApiError
+from .const import CONF_SECOND_CAMERA, DEFAULT_SECOND_CAMERA
 from .entity import HometouchEntity
+
+# Why a new picture could not be taken, as shown to the user.
+REFRESH_ERRORS = {
+    "live_running": "è in corso una live: la foto si aggiorna quando finisce",
+    "incoming_call_active": "sta suonando: la foto della suonata arriva da sola",
+    "call_already_running": "il videocitofono è occupato in un'altra chiamata",
+    "no_video": "il videocitofono non ha mandato video",
+    "no_picture": "nessun fotogramma ricevuto",
+}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     hub = entry.runtime_data
-    buttons = [HometouchOpenButton(hub, name) for name in hub.entrances] if hub.info.get("opening_enabled") else []
+    buttons: list[ButtonEntity] = (
+        [HometouchOpenButton(hub, name) for name in hub.entrances] if hub.info.get("opening_enabled") else [])
+    for camera in sorted(hub.sources):
+        name = (entry.options.get(CONF_SECOND_CAMERA) or DEFAULT_SECOND_CAMERA).strip()[:64] or DEFAULT_SECOND_CAMERA
+        buttons.append(HometouchRefreshPictureButton(hub, camera, name if camera else None))
     # Buttons of entrances removed or renamed in the options do not linger as unavailable.
     current = {button.unique_id for button in buttons}
     registry = er.async_get(hass)
@@ -44,3 +58,23 @@ class HometouchOpenButton(HometouchEntity, ButtonEntity):
             raise HomeAssistantError(f"Apertura non inviata: {err}") from err
         if not result.get("ok"):
             raise HomeAssistantError(f"Apertura rifiutata: {result.get('error')}")
+
+
+class HometouchRefreshPictureButton(HometouchEntity, ButtonEntity):
+    """Takes a new picture with a short camera call (at most one every 30 s)."""
+
+    _attr_icon = "mdi:camera-retake"
+
+    def __init__(self, hub, camera: int, name: str | None) -> None:
+        super().__init__(hub, "refresh_picture" if camera == 0 else f"refresh_picture_{camera}")
+        self.camera = camera
+        if name is None:
+            self._attr_translation_key = "refresh_picture"
+        else:
+            self._attr_translation_key = "refresh_picture_named"
+            self._attr_translation_placeholders = {"camera": name}
+
+    async def async_press(self) -> None:
+        reason = await self.hub.async_refresh_picture(self.camera)
+        if reason:
+            raise HomeAssistantError(f"Foto non aggiornata: {REFRESH_ERRORS.get(reason, reason)}")
