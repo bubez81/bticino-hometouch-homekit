@@ -26,6 +26,7 @@ _call_owner = None
 _incoming_state = None
 _incoming_commands = None
 _connection_status = None
+_open_entrance = None
 
 
 def set_incoming_state(state):
@@ -53,6 +54,8 @@ def open_camera_log(header):
 def handle_request(request: dict) -> dict:
     global _call_process, _last_event, _media_info, _call_owner
     command = request.get("command")
+    if command == 'open_entrance' and _open_entrance is not None:
+        return _open_entrance(request)
     if command in ('attach_incoming', 'answer_incoming', 'release_incoming', 'open_incoming',
                    'open_entrance', 'entrance_status'):
         commands = _incoming_commands
@@ -172,8 +175,11 @@ class _Handler(socketserver.StreamRequestHandler):
             pass  # the client stopped waiting for the answer (e.g. a closing live view)
 
 
-class IPCServer(socketserver.UnixStreamServer):
+class IPCServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    # One thread per request: an opening that waits for a reconnection must not
+    # hold up the plugin's other requests.
     allow_reuse_address = True
+    daemon_threads = True
 
 
 def remove_stale_socket(path) -> None:

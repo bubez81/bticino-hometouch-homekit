@@ -163,6 +163,10 @@ is not shown). The dashboard card shows it under the video, with a coloured
 dot; tap it to open *Repairs* when it is unstable. Hide the line with
 `show_connection: false` in the card's YAML.
 
+An opening asked while the connection is down waits up to 20 seconds for it to
+come back, then for the HOMETOUCH's answer; the button reports an error when
+the gate could not be opened.
+
 ## Updating and removing
 
 - **Update**: HACS shows the update; install it and restart Home Assistant.
@@ -178,7 +182,7 @@ dot; tap it to open *Repairs* when it is unstable. Hide the line with
 | The live view does not start | Ring once so the gateway at home is found, or enter its address under **Configure**; the log line `Live: no video from the camera` includes the camera call's details |
 | Camera calls fail with `407` in the log | The phone is connected to the cloud server: ring once or set the gateway's address under **Configure** |
 | Authentication errors after changes in the Door Entry app | ⋮ on the integration → **Reconfigure**: sign in again and the phone's credentials are re-read from the cloud (nothing new is created) |
-| A gate does not open | Check its address under **Configure** → **Entrances**; if *Repairs* says the HOMETOUCH keeps dropping the connection, restart the HOMETOUCH |
+| A gate does not open | The button shows why. Check its address under **Configure** → **Entrances**; if *HOMETOUCH connection* is unstable, restart the HOMETOUCH |
 | No notification | Check the automation made from the blueprint and the Companion app's notification permissions |
 | The card says the microphone works only over HTTPS | Open Home Assistant through its HTTPS address |
 | The card is missing from *Add card* | Reload the page (the card is added by the integration at start-up) |

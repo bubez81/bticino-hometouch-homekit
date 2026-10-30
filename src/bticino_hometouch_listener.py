@@ -31,7 +31,7 @@ from bticino_audio_offer import parse_audio_offer
 from bticino_homekit_call import CallCommands, MediaAttachment
 from bticino_incoming_audio import CODECS as INCOMING_AUDIO_CODECS, IncomingAudio
 from bticino_call_unlock import open_current_call
-from bticino_entrance_open import EntranceOpener
+from bticino_entrance_open import EntranceOpener, open_and_confirm
 import bticino_api
 from bticino_signaling_observation import observe as observe_signaling
 
@@ -532,6 +532,14 @@ def api_info():
 
 
 def api_command(request):
+    if request.get("command") == "open_entrance":
+        # Waits for a reconnection and for the gateway's answer (Apple Home and Home Assistant).
+        return open_and_confirm(lambda: listener_command(request), ENTRANCE_OPENER.results,
+                                request.get("entrance"))
+    return listener_command(request)
+
+
+def listener_command(request):
     commands = API_COMMANDS
     if commands is None:
         return {"ok": False, "error": "sip_unavailable"}
@@ -2188,6 +2196,7 @@ def main():
         IPC_MODULE = bticino_ipc
         bticino_ipc.SNAPSHOT_DIR = SNAPSHOT_DIR
         bticino_ipc._connection_status = API_BUS.connection_status
+        bticino_ipc._open_entrance = api_command
         # A listener that crashed leaves its socket behind; the next start would
         # then fail with "Address already in use" forever.
         bticino_ipc.remove_stale_socket(bticino_ipc.SOCKET_PATH)

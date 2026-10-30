@@ -61,7 +61,10 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
 - **Live view without a ring:** opens a camera call with sound; the panel ends
   it after about a minute and the plugin opens a new one.
 - **Gates:** each lock opens its gate for a few seconds and returns to locked
-  (there is no lock sensor).
+  (there is no lock sensor). It shows *unlocked* only once the HOMETOUCH has
+  the command: if the connection is down at that moment, the opening waits up
+  to 20 seconds for it to come back. An opening that fails shows the lock as
+  **jammed** for a minute, so you know the gate did not open.
 - **Home Assistant:** use the `bticino_hometouch` integration from HACS on its
   own; it does not need this plugin (see the
   [Home Assistant guide](https://github.com/bubez81/bticino-hometouch-homekit/blob/main/docs/home-assistant.md)).
@@ -102,7 +105,7 @@ with addresses, accounts and keys replaced by placeholders.
 | Accessory without picture or live | Wait about 6 s; after many live views in a row the gateway needs 10–20 minutes of rest |
 | Live never starts on a new setup | Ring the doorbell once: the gateway at home is found at the first ring (log: `Gateway di casa trovato`); camera calls through the cloud server are refused |
 | Live view without sound | Check the `BTicino live audio` lines in the log (sound level of the panel) |
-| A gate does not open | Check its address with **Prova apertura**; if *Collegamento HOMETOUCH* is open, restart the HOMETOUCH |
+| A gate does not open, or its lock shows *jammed* | Check its address with **Prova apertura**; if *Collegamento HOMETOUCH* is open, restart the HOMETOUCH |
 | No notification | In Apple Home, accessory settings → doorbell notifications on |
 | Home Assistant offers a "BTicino HOMETOUCH" bridge to pair | It is Homebridge's own (empty) bridge: ignore it |
 | Anything else | The Homebridge log shows the listener's lines with the `[listener]` prefix; calls are logged in `bticino-hometouch/camera-calls.log` |
