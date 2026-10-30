@@ -5,6 +5,30 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-10-30
+
+### Added (Homebridge plugin 0.11.0)
+
+- **HOMETOUCH connection** contact sensor inside the video doorbell accessory:
+  closed while connected; open when the HOMETOUCH keeps dropping the
+  connection (6 times in 10 minutes) or is not reached for a minute; closed
+  again after 5 minutes without drops. Apple Home can notify its changes. On
+  by default; option *HOMETOUCH connection sensor* to turn it off. The
+  diagnostics file reports the connection too.
+
+### Added (Home Assistant 0.3.8)
+
+- **HOMETOUCH connection** sensor: connected, unstable or disconnected (only
+  after a minute without registration, so the normal reconnections are not
+  shown). The dashboard card shows it under the video; tap it to open
+  *Repairs* when it is unstable.
+
+### Listener
+
+- The listener reports the connection (`connection` in `/api/v1/state`, IPC
+  command `connection_status`) with the same thresholds as the Home Assistant
+  warning.
+
 ## 2026-10-27
 
 ### Added (Home Assistant 0.3.7)

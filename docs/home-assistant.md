@@ -156,6 +156,13 @@ once the connection stays up for 5 minutes (`gateway_stable`). For a push
 notification on your phone, trigger an automation on the event
 `bticino_hometouch_event` with `type: gateway_unstable`.
 
+The sensor **HOMETOUCH connection** shows the same at a glance: *connected*,
+*unstable* (restart the HOMETOUCH) or *disconnected* (not registered for more
+than a minute; the usual reconnection about every 17 minutes takes seconds and
+is not shown). The dashboard card shows it under the video, with a coloured
+dot; tap it to open *Repairs* when it is unstable. Hide the line with
+`show_connection: false` in the card's YAML.
+
 ## Updating and removing
 
 - **Update**: HACS shows the update; install it and restart Home Assistant.

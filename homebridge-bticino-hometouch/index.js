@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { ListenerSupervisor } = require('./supervisor');
 const { addEntranceLocks, normalizeEntrances } = require('./entrance-locks');
+const { addConnectionSensor } = require('./connection-sensor');
 const { PluginLog, teeLogger } = require('./plugin-log');
 const { SecondCamera } = require('./second-camera');
 const managers = new WeakMap();
@@ -58,7 +59,7 @@ class BTicinoPlatform {
       name: this.config.name || 'Videocitofono', ipcSocket: this.supervisor.socket,
       enableCamera: true, enableHapLive: true, enableTwoWayAudio: true, standalone: true,
       ffmpegPath: ffmpeg, audioFfmpegPath: ffmpeg, liveAudio: this.config.liveAudio !== false,
-      entrances, serialNumber: this.config.serialNumber,
+      entrances, serialNumber: this.config.serialNumber, connectionSensor: this.config.connectionSensor !== false,
     }, api);
     // A second camera of the entrance panel (Tvcc), inside the bridge.
     this.cachedAccessories = this.cachedAccessories || new Map();
@@ -173,6 +174,9 @@ class BTicinoAccessory {
     this.controllers.forEach(controller => accessory.configureController(controller));
     if (Array.isArray(this.config.entrances) && this.config.entrances.length)
       this.lockServices = addEntranceLocks(this.api, accessory, this.config.entrances,
+        this.config.ipcSocket || '/tmp/bticino-hometouch.sock', this.log);
+    if (this.config.connectionSensor === true)
+      this.connectionSensor = addConnectionSensor(this.api, accessory,
         this.config.ipcSocket || '/tmp/bticino-hometouch.sock', this.log);
     this.externalAccessory = accessory;
     this.api.on('didFinishLaunching', () => {

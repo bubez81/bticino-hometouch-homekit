@@ -34,6 +34,48 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 
 
+class ConnectionHealth:
+    """Connected, unstable or disconnected, from the SIP registrations and drops.
+
+    A healthy HOMETOUCH closes the connection about every 17 minutes and is
+    registered again within seconds; one that needs a restart closes it every
+    few seconds. Same thresholds as the Home Assistant warning.
+    """
+
+    UNSTABLE_DROPS = 6
+    UNSTABLE_WINDOW = 600
+    STABLE_AFTER = 300
+    # A normal reconnection is not reported as disconnected.
+    DOWN_AFTER = 60
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.registered = False
+        self.down_since = clock()
+        self.drops = []
+        self.unstable = False
+
+    def registration(self):
+        self.registered, self.down_since = True, None
+
+    def drop(self):
+        now = self.clock()
+        if self.registered:
+            self.down_since = now
+        self.registered = False
+        self.drops = [t for t in self.drops if now - t < self.UNSTABLE_WINDOW] + [now]
+        if len(self.drops) >= self.UNSTABLE_DROPS:
+            self.unstable = True
+
+    def status(self):
+        now = self.clock()
+        if self.unstable and self.drops and now - self.drops[-1] >= self.STABLE_AFTER:
+            self.unstable, self.drops = False, []
+        if not self.registered and now - self.down_since >= self.DOWN_AFTER:
+            return 'disconnected'
+        return 'unstable' if self.unstable else 'connected'
+
+
 class EventBus:
     """Thread-safe fan-out of events plus the derived current state."""
 
@@ -44,6 +86,7 @@ class EventBus:
         self.sequence = 0
         self.state = {'sip_registered': False, 'call_active': False, 'last_ring': None,
                       'last_entrance_open': None}
+        self.health = ConnectionHealth()
 
     def publish(self, event_type, **data):
         with self.lock:
@@ -62,8 +105,10 @@ class EventBus:
         kind = event['type']
         if kind == 'sip_registered':
             self.state['sip_registered'] = True
+            self.health.registration()
         elif kind == 'sip_disconnected':
             self.state['sip_registered'] = False
+            self.health.drop()
         elif kind == 'ring':
             self.state['call_active'] = True
             self.state['last_ring'] = {'time': event['time'], 'call': event.get('call'), 'entrance': None}
@@ -84,7 +129,11 @@ class EventBus:
 
     def snapshot_state(self):
         with self.lock:
-            return json.loads(json.dumps(self.state))
+            return {**json.loads(json.dumps(self.state)), 'connection': self.health.status()}
+
+    def connection_status(self):
+        with self.lock:
+            return self.health.status()
 
     def subscribe(self):
         with self.lock:

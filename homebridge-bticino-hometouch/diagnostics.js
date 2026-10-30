@@ -71,6 +71,7 @@ async function buildDiagnostics({storage, config = {}, versions = {}, ffmpeg, py
   if (onboarding?.sip_server) lines.push(`gateway ${onboarding.sip_server}:${onboarding.sip_port || 5061}: ${await tcpReachable(onboarding.sip_server, onboarding.sip_port || 5061)}`);
   lines.push(`listener (IPC ping): ${await ask(socket, 'ping')}`);
   lines.push(`chiamata a richiesta: ${await ask(socket, 'status')}`);
+  lines.push(`collegamento HOMETOUCH: ${await ask(socket, 'connection_status')}`);
   lines.push(`suonata in corso: ${await ask(socket, 'incoming_status')}`);
   lines.push(`ultime aperture: ${await ask(socket, 'entrance_status')}`);
 

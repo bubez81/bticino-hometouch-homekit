@@ -22,7 +22,7 @@ class Service {
   addOptionalCharacteristic() {}
   setPrimaryService() {}
 }
-class Doorbell extends Service {} class AccessoryInformation extends Service {} class LockMechanism extends Service {}
+class Doorbell extends Service {} class AccessoryInformation extends Service {} class LockMechanism extends Service {} class ContactSensor extends Service {}
 class DoorbellController { constructor(options) { this.options = options; } on() {} setSpeakerMuted() {} }
 class PlatformAccessory {
   constructor(name, uuid, category) { Object.assign(this, {displayName: name, UUID: uuid, category}); this.services = [new AccessoryInformation()]; this.controllers = []; }
@@ -32,7 +32,8 @@ class PlatformAccessory {
   configureController(controller) { this.controllers.push(controller); }
 }
 const Characteristic = {Manufacturer: 'm', Model: 'mo', SerialNumber: 's', Name: 'name', ProgrammableSwitchEvent: {SINGLE_PRESS: 0},
-  LockCurrentState: {SECURED: 1, UNSECURED: 0}, LockTargetState: 'target'};
+  LockCurrentState: {SECURED: 1, UNSECURED: 0}, LockTargetState: 'target',
+  ContactSensorState: {CONTACT_DETECTED: 0, CONTACT_NOT_DETECTED: 1}, StatusFault: {NO_FAULT: 0, GENERAL_FAULT: 1}};
 const platforms = {}, handlers = {}, published = [];
 const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bticino-platform-test-'));
 const api = {
@@ -41,7 +42,7 @@ const api = {
   platformAccessory: PlatformAccessory,
   publishExternalAccessories(plugin, accessories) { published.push({plugin, accessories}); },
   user: {storagePath: () => storageRoot},
-  hap: {Service: {Doorbell, AccessoryInformation, LockMechanism}, Characteristic, DoorbellController,
+  hap: {Service: {Doorbell, AccessoryInformation, LockMechanism, ContactSensor}, Characteristic, DoorbellController,
     Categories: {VIDEO_DOORBELL: 18}, uuid: {generate: value => `uuid:${value}`}},
 };
 const lines = [];
@@ -98,6 +99,10 @@ require('./index')(api);
   const locks = accessory.services.filter(s => s instanceof LockMechanism);
   assert.deepEqual(locks.map(s => [s.displayName, s.subtype]), [['Scala', 'scala'], ['Cancello Esterno', 'cancello_esterno']]);
   assert.equal(locks[0].values.target, Characteristic.LockCurrentState.SECURED);
+  // The HOMETOUCH connection sensor, closed while connected.
+  const sensors = accessory.services.filter(s => s instanceof ContactSensor);
+  assert.deepEqual(sensors.map(s => s.subtype), ['connection']);
+  assert.equal(sensors[0].values[Characteristic.ContactSensorState], Characteristic.ContactSensorState.CONTACT_DETECTED);
 
   // Opening: the right entrance through IPC, shown unlocked, then locked again.
   await locks[1].handlers.target(Characteristic.LockCurrentState.UNSECURED);

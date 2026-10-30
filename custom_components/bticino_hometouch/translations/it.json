@@ -95,6 +95,14 @@
         "state": {
           "not_recognized": "Non riconosciuto"
         }
+      },
+      "connection": {
+        "name": "Collegamento HOMETOUCH",
+        "state": {
+          "connected": "Collegato",
+          "unstable": "Instabile: riavvia il HOMETOUCH",
+          "disconnected": "Scollegato"
+        }
       }
     }
   },
