@@ -39,11 +39,11 @@ class HometouchApi:
         self._base = f"http://{host}:{port}{API_PREFIX}"
         self._headers = {"Authorization": f"Bearer {token}"}
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> aiohttp.ClientResponse:
+    async def _request(self, method: str, path: str, timeout: float = 10, **kwargs: Any) -> aiohttp.ClientResponse:
         try:
             response = await self._session.request(
                 method, self._base + path, headers=self._headers,
-                timeout=aiohttp.ClientTimeout(total=10), **kwargs)
+                timeout=aiohttp.ClientTimeout(total=timeout), **kwargs)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise ApiError(f"listener unreachable: {err}") from err
         if response.status in (401, 403):
@@ -51,8 +51,8 @@ class HometouchApi:
             raise AuthError(f"access denied ({response.status})")
         return response
 
-    async def _json(self, method: str, path: str) -> dict[str, Any]:
-        response = await self._request(method, path)
+    async def _json(self, method: str, path: str, timeout: float = 10) -> dict[str, Any]:
+        response = await self._request(method, path, timeout)
         try:
             payload = await response.json(content_type=None)
         except (aiohttp.ClientError, ValueError) as err:
@@ -72,7 +72,8 @@ class HometouchApi:
         return await self._json("GET", "/state")
 
     async def open_entrance(self, entrance: str) -> dict[str, Any]:
-        return await self._json("POST", f"/entrances/{entrance}/open")
+        # The listener waits up to 20 s for a reconnection of the HOMETOUCH, then for its answer.
+        return await self._json("POST", f"/entrances/{entrance}/open", timeout=35)
 
     async def snapshot(self, width: int | None = None, height: int | None = None) -> bytes | None:
         query = f"?width={width}&height={height}" if width and height else ""

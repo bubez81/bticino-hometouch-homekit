@@ -7,6 +7,20 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-10-30
 
+### Changed (Homebridge plugin 0.12.0, Home Assistant 0.3.9)
+
+- Opening a gate while the HOMETOUCH connection is down waits up to 20 seconds
+  for the next connection instead of failing at once (while the HOMETOUCH
+  keeps dropping the connection, it is back every 16 seconds or so), then up
+  to 3 seconds for the HOMETOUCH's answer.
+- Apple Home: the lock shows *unlocked* only once the opening was sent, and
+  **jammed** for a minute when it failed, instead of returning to *locked* as
+  if it had worked.
+- Home Assistant: the opening button reports why an opening failed; the card
+  shows *Opening…* while it waits.
+- The listener answers the plugin's requests in parallel, so a waiting opening
+  does not hold up the others.
+
 ### Added (Homebridge plugin 0.11.0)
 
 - **HOMETOUCH connection** contact sensor inside the video doorbell accessory:

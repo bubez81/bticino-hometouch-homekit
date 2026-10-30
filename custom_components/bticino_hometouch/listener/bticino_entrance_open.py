@@ -5,7 +5,9 @@ The gateway accepts `*8*19*<address>##` (press) and `*8*20*<address>##`
 to the gateway, not that the door physically opened.
 
 The opener outlives individual SIP connections, so a release whose send fails
-during a reconnect is retried on the next connection until a deadline.
+during a reconnect is retried on the next connection until a deadline. A
+request made while the connection is down waits for the next one, and then for
+the gateway's answer to the press.
 """
 import re
 import secrets
@@ -15,6 +17,38 @@ NAME = re.compile(r'^[a-z0-9_-]{1,32}$')
 ADDRESS = re.compile(r'^[0-9]{1,4}$')
 RELEASE_RETRY_SECONDS = 15.0
 TRANSACTION_TTL_SECONDS = 30.0
+# A HOMETOUCH that keeps dropping the connection is registered again within
+# about 16 seconds; the gateway answers a press within a second.
+OPEN_WAIT_SECONDS = 20.0
+CONFIRM_SECONDS = 3.0
+RETRYABLE = {'sip_unavailable', 'incoming_audio_unavailable', 'listener_closed', 'listener_timeout',
+             'listener_busy'}
+
+
+def open_and_confirm(send, results, name, wait=OPEN_WAIT_SECONDS, confirm=CONFIRM_SECONDS,
+                     clock=time.monotonic, sleep=time.sleep):
+    """Open through `send` (the current connection), waiting for a reconnection
+    and then for the gateway's answer: `confirmed`, or `sent_unconfirmed` without one."""
+    deadline = clock() + wait
+    while True:
+        result = send()
+        if result.get('ok') or result.get('error') not in RETRYABLE or clock() >= deadline:
+            break
+        sleep(0.5)
+    if not result.get('ok'):
+        return result
+    end = clock() + confirm
+    while True:
+        press = str((results.get(name) or {}).get('press', ''))
+        if press.startswith('SIP/2.0 2'):
+            return {**result, 'state': 'confirmed'}
+        if press.startswith('SIP/2.0 '):
+            return {'ok': False, 'error': 'rejected', 'entrance': name, 'detail': press[:80]}
+        if press.startswith('send_failed'):
+            return {'ok': False, 'error': 'send_failed', 'entrance': name}
+        if clock() >= end:
+            return result
+        sleep(0.1)
 
 
 def build_message(sender, domain, body):

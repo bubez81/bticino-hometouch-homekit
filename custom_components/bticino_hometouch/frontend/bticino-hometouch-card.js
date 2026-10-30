@@ -10,12 +10,14 @@ const TEXT = {
     ringing: "Someone is ringing", answered: "Call answered: talk to the door",
     talking: "Microphone on", https: "The microphone works only when Home Assistant is opened over HTTPS",
     mic: "Microphone not available", confirm: "Open {name}?", error: "Not possible: {error}",
+    opening: "Opening {name}…", opened: "{name}: opened",
   },
   it: {
     talk: "Parla", stop: "Smetti di parlare", answer: "Rispondi", hangup: "Riaggancia",
     ringing: "Stanno suonando", answered: "Chiamata risposta: parla alla porta",
     talking: "Microfono acceso", https: "Il microfono funziona solo aprendo Home Assistant in HTTPS",
     mic: "Microfono non disponibile", confirm: "Aprire {name}?", error: "Non riuscito: {error}",
+    opening: "Apertura {name}…", opened: "{name}: aperto",
   },
 };
 
@@ -379,8 +381,11 @@ class BticinoHometouchCard extends HTMLElement {
 
   async _open(entityId, name) {
     if (!window.confirm(this._t("confirm", { name }))) return;
+    // While the HOMETOUCH reconnects the opening can take up to 20 seconds.
+    this._setStatus(this._t("opening", { name }));
     try {
       await this._hass.callService("button", "press", { entity_id: entityId });
+      this._setStatus(this._t("opened", { name }));
     } catch (err) {
       this._setStatus(this._t("error", { error: err.message }));
     }

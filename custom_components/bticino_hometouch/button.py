@@ -14,6 +14,12 @@ from .const import CONF_SECOND_CAMERA, DEFAULT_SECOND_CAMERA
 from .entity import HometouchEntity
 
 # Why a new picture could not be taken, as shown to the user.
+OPEN_ERRORS = {
+    "sip_unavailable": "il HOMETOUCH non è collegato da 20 secondi; se succede ancora, riavvialo",
+    "rejected": "il HOMETOUCH ha rifiutato il comando",
+    "send_failed": "comando non inviato al HOMETOUCH",
+    "entrance_busy": "un'altra apertura è in corso",
+}
 REFRESH_ERRORS = {
     "live_running": "è in corso una live: la foto si aggiorna quando finisce",
     "incoming_call_active": "sta suonando: la foto della suonata arriva da sola",
@@ -57,7 +63,8 @@ class HometouchOpenButton(HometouchEntity, ButtonEntity):
         except ApiError as err:
             raise HomeAssistantError(f"Apertura non inviata: {err}") from err
         if not result.get("ok"):
-            raise HomeAssistantError(f"Apertura rifiutata: {result.get('error')}")
+            error = result.get("error")
+            raise HomeAssistantError(f"Apertura non riuscita: {OPEN_ERRORS.get(error, error)}")
 
 
 class HometouchRefreshPictureButton(HometouchEntity, ButtonEntity):
