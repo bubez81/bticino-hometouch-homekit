@@ -105,7 +105,8 @@ async def test_entities_events_and_opening(hass, listener):
     for entity_id in (doorbell, "button.videocitofono_apri_scala", "button.videocitofono_apri_esterno",
                       "camera.videocitofono_telecamera", "image.videocitofono_ultimo_visitatore",
                       "sensor.videocitofono_ultima_suonata", "sensor.videocitofono_ingresso_ultima_suonata",
-                      "binary_sensor.videocitofono_registrazione_sip", "binary_sensor.videocitofono_chiamata_in_corso"):
+                      "binary_sensor.videocitofono_registrazione_sip", "binary_sensor.videocitofono_chiamata_in_corso",
+                      "sensor.videocitofono_collegamento_hometouch"):
         assert entity_id in ids, (entity_id, sorted(i for i in ids if "videocitofono" in i))
 
     listener.bus.publish("sip_registered")
@@ -113,6 +114,7 @@ async def test_entities_events_and_opening(hass, listener):
     await wait_for(lambda: hass.states.get(doorbell).attributes.get("event_type") == "ring")
     assert hass.states.get("binary_sensor.videocitofono_chiamata_in_corso").state == "on"
     assert hass.states.get("binary_sensor.videocitofono_registrazione_sip").state == "on"
+    assert hass.states.get("sensor.videocitofono_collegamento_hometouch").state == "connected"
     assert hass.states.get("sensor.videocitofono_ingresso_ultima_suonata").state == "not_recognized"
 
     listener.bus.publish("entrance_detected", call="abc123", entrance="scala")

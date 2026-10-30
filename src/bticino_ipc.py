@@ -25,6 +25,7 @@ _media_info = None
 _call_owner = None
 _incoming_state = None
 _incoming_commands = None
+_connection_status = None
 
 
 def set_incoming_state(state):
@@ -63,6 +64,9 @@ def handle_request(request: dict) -> dict:
             return {"ok": True, "incoming": dict(_incoming_state) if _incoming_state else None}
     if command == "ping":
         return {"ok": True, "command": "ping"}
+    if command == "connection_status":
+        status = _connection_status
+        return {"ok": True, "connection": status() if status else "unknown"}
     if command == "status":
         with _call_lock:
             running = _call_process is not None and _call_process.poll() is None

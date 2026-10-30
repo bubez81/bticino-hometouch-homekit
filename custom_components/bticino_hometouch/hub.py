@@ -28,6 +28,10 @@ Listener = Callable[[dict[str, Any] | None], None]
 UNSTABLE_DROPS = 6
 UNSTABLE_WINDOW = 600
 STABLE_AFTER = 300
+# A normal reconnection takes seconds: only a longer one is shown as disconnected.
+DOWN_AFTER = 60
+
+CONNECTED, UNSTABLE, DISCONNECTED = "connected", "unstable", "disconnected"
 
 
 class HometouchHub:
@@ -55,6 +59,15 @@ class HometouchHub:
         self.gateway_unstable = False
         self._drops: list[float] = []
         self._cancel_stable: Callable[[], None] | None = None
+        self.disconnected = False
+        self._cancel_down: Callable[[], None] | None = None
+
+    @property
+    def connection(self) -> str:
+        """Connected, unstable (the HOMETOUCH needs a restart) or disconnected."""
+        if self.disconnected:
+            return DISCONNECTED
+        return UNSTABLE if self.gateway_unstable else CONNECTED
 
     @property
     def issue_id(self) -> str:
@@ -78,12 +91,14 @@ class HometouchHub:
         # A warning left from before a restart comes back by itself if still true.
         ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
         self.state = await self.api.state()
+        self._registration_changed()
         self._task = self.hass.async_create_background_task(self._run(), f"{BUS_EVENT}_stream")
 
     async def async_stop(self) -> None:
-        if self._cancel_stable:
-            self._cancel_stable()
-            self._cancel_stable = None
+        for cancel in (self._cancel_stable, self._cancel_down):
+            if cancel:
+                cancel()
+        self._cancel_stable = self._cancel_down = None
         if self._task:
             self._task.cancel()
             try:
@@ -117,10 +132,13 @@ class HometouchHub:
         kind = event.get("type")
         if kind == "state":
             self.state = {k: v for k, v in event.items() if k not in ("id", "type", "time")}
+            self._registration_changed()
         elif kind == "sip_registered":
             self.state["sip_registered"] = True
+            self._registration_changed()
         elif kind == "sip_disconnected":
             self.state["sip_registered"] = False
+            self._registration_changed()
             self._connection_dropped()
         elif kind == "ring":
             self.state["call_active"] = True
@@ -141,6 +159,23 @@ class HometouchHub:
                 **{k: v for k, v in event.items() if k in ("time", "call", "entrance", "reason", "result")},
             })
         self._notify(event)
+
+    @callback
+    def _registration_changed(self) -> None:
+        if self.state.get("sip_registered"):
+            self.disconnected = False
+            if self._cancel_down:
+                self._cancel_down()
+                self._cancel_down = None
+        elif not self.disconnected and self._cancel_down is None:
+            self._cancel_down = async_call_later(self.hass, DOWN_AFTER, self._still_down)
+
+    @callback
+    def _still_down(self, _now: Any) -> None:
+        self._cancel_down = None
+        self.disconnected = True
+        _LOGGER.warning("Not registered with the HOMETOUCH for %d seconds", DOWN_AFTER)
+        self._notify({"type": "connection_changed"})
 
     @callback
     def _connection_dropped(self) -> None:
@@ -171,6 +206,7 @@ class HometouchHub:
         _LOGGER.info("Connection to the HOMETOUCH stable again")
         ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
         self.hass.bus.async_fire(BUS_EVENT, {"entry_id": self.entry_id, "type": "gateway_stable"})
+        self._notify({"type": "connection_changed"})
 
     async def async_refresh_picture(self, camera: int) -> str:
         """A new picture of `camera` from a short call; returns why not, or ""."""

@@ -2187,6 +2187,7 @@ def main():
         import bticino_ipc
         IPC_MODULE = bticino_ipc
         bticino_ipc.SNAPSHOT_DIR = SNAPSHOT_DIR
+        bticino_ipc._connection_status = API_BUS.connection_status
         # A listener that crashed leaves its socket behind; the next start would
         # then fail with "Address already in use" forever.
         bticino_ipc.remove_stale_socket(bticino_ipc.SOCKET_PATH)

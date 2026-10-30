@@ -71,6 +71,13 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
   *More options* → *Esterno*, with the Homebridge setup code). Rename or hide it
   in the plugin settings. Its preview is the latest picture seen in its live
   view.
+- **HOMETOUCH connection:** a contact sensor inside *Videocitofono*, closed
+  while the plugin is connected to the HOMETOUCH. It opens when the HOMETOUCH
+  keeps dropping the connection (6 times in 10 minutes; rings and gate
+  openings may then be lost: restart the HOMETOUCH) or when it cannot be
+  reached for a minute. It closes again after 5 minutes without drops. Turn on
+  its notifications in Apple Home to be told; turn it off in the plugin
+  settings if you do not want it.
 
 ## Updating and removing
 
@@ -95,7 +102,7 @@ with addresses, accounts and keys replaced by placeholders.
 | Accessory without picture or live | Wait about 6 s; after many live views in a row the gateway needs 10–20 minutes of rest |
 | Live never starts on a new setup | Ring the doorbell once: the gateway at home is found at the first ring (log: `Gateway di casa trovato`); camera calls through the cloud server are refused |
 | Live view without sound | Check the `BTicino live audio` lines in the log (sound level of the panel) |
-| A gate does not open | Check its address with **Prova apertura** |
+| A gate does not open | Check its address with **Prova apertura**; if *Collegamento HOMETOUCH* is open, restart the HOMETOUCH |
 | No notification | In Apple Home, accessory settings → doorbell notifications on |
 | Home Assistant offers a "BTicino HOMETOUCH" bridge to pair | It is Homebridge's own (empty) bridge: ignore it |
 | Anything else | The Homebridge log shows the listener's lines with the `[listener]` prefix; calls are logged in `bticino-hometouch/camera-calls.log` |

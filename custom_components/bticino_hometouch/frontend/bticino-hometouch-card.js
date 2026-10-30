@@ -41,6 +41,7 @@ class BticinoHometouchCard extends HTMLElement {
     this._hass = hass;
     if (!this._built) this._build();
     if (this._video) this._video.hass = hass;
+    this._renderConnection();
     this._renderButtons();
   }
 
@@ -73,16 +74,27 @@ class BticinoHometouchCard extends HTMLElement {
         button.main { background: var(--primary-color); color: var(--text-primary-color, #fff); }
         button.danger { background: var(--error-color, #db4437); color: #fff; }
         .status { padding: 0 12px 12px; color: var(--secondary-text-color); min-height: 1.2em; }
+        .connection { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0; cursor: pointer;
+                      color: var(--secondary-text-color); font-size: 0.9em; }
+        .connection[hidden] { display: none; }
+        .connection .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success-color, #43a047); }
+        .connection.unstable .dot { background: var(--warning-color, #ffa600); }
+        .connection.disconnected .dot, .connection.unavailable .dot { background: var(--error-color, #db4437); }
+        .connection.unstable, .connection.disconnected { color: var(--primary-text-color); }
       </style>
       <ha-card>
         <div class="video"></div>
+        <div class="connection" hidden><span class="dot"></span><span class="text"></span></div>
         <div class="controls"></div>
         <div class="status"></div>
       </ha-card>`;
     this._controls = root.querySelector(".controls");
     this._status = root.querySelector(".status");
     this._videoBox = root.querySelector(".video");
+    this._connection = root.querySelector(".connection");
+    this._connection.addEventListener("click", () => this._connectionDetails());
     this._camera = this._config.entity;
+    this._renderConnection();
     await this._showCamera(this._camera);
     this._renderButtons();
   }
@@ -120,6 +132,40 @@ class BticinoHometouchCard extends HTMLElement {
     this._signature = null;
     await this._showCamera(next);
     this._renderButtons();
+  }
+
+  // The "HOMETOUCH connection" sensor of the same device (connected, unstable, disconnected).
+  _connectionEntity() {
+    const hass = this._hass;
+    const camera = hass.entities && hass.entities[this._config.entity];
+    if (!camera || !camera.device_id) return null;
+    const found = Object.values(hass.entities).find((e) => e.device_id === camera.device_id
+      && e.entity_id.startsWith("sensor.") && (hass.states[e.entity_id]?.attributes?.options || []).includes("unstable"));
+    return found ? found.entity_id : null;
+  }
+
+  _renderConnection() {
+    if (!this._connection || !this._hass) return;
+    const entityId = this._connectionEntity();
+    const state = entityId && this._hass.states[entityId];
+    this._connection.hidden = !state || this._config.show_connection === false;
+    if (this._connection.hidden) return;
+    this._connection.className = `connection ${state.state}`;
+    const text = this._hass.formatEntityState ? this._hass.formatEntityState(state) : state.state;
+    this._connection.querySelector(".text").textContent = `${state.attributes.friendly_name || ""}: ${text}`
+      .replace(/^Videocitofono\s+/, "");
+  }
+
+  // Unstable: the Repairs page says to restart the HOMETOUCH; otherwise the sensor's history.
+  _connectionDetails() {
+    const entityId = this._connectionEntity();
+    if (!entityId) return;
+    if (this._hass.states[entityId]?.state === "unstable") {
+      history.pushState(null, "", "/config/repairs");
+      window.dispatchEvent(new CustomEvent("location-changed"));
+      return;
+    }
+    this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
   }
 
   _openButtons() {

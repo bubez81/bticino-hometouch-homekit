@@ -50,6 +50,12 @@
         "default": "Esterno",
         "maxLength": 64
       },
+      "connectionSensor": {
+        "title": "HOMETOUCH connection sensor",
+        "type": "boolean",
+        "default": true,
+        "description": "A contact sensor that opens when the HOMETOUCH keeps dropping the connection or cannot be reached (rings and entrance opening may then not work until it is restarted). Turn on its notifications in Apple Home."
+      },
       "homeAssistant": {
         "title": "Home Assistant",
         "type": "object",
@@ -112,6 +118,7 @@
     "liveAudio",
     "secondCamera",
     "secondCameraName",
+    "connectionSensor",
     {
       "type": "fieldset",
       "title": "Home Assistant",
