@@ -111,7 +111,10 @@ entrance panel by itself. Before the first ring or live view a neutral
 picture is shown. **Refresh picture** (one button per camera) takes a new one
 with a short camera call of about ten seconds: pressed again within 30
 seconds it keeps the fresh picture, and it never interrupts a live view or a
-ring. Refreshing the picture on a schedule, for example every few minutes,
+ring. While that camera's own live view is open — as on a dashboard that shows
+the stream — the live already keeps the picture current, so the button uses it
+and reports success instead of failing; a live view of another camera makes it
+wait, since the gateway takes one call at a time. Refreshing the picture on a schedule, for example every few minutes,
 is possible with an automation, but every refresh is a camera call: the
 gateway takes one at a time and, after many, stops sending video for a
 while.
