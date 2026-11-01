@@ -5,6 +5,17 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-01
+
+### Fixed (Home Assistant 0.3.10)
+
+- **Refresh picture** no longer fails with *"a live is in progress"* when that
+  camera's own live view is open (as on a dashboard showing the stream): the
+  live already keeps the picture current, so the button uses it and reports
+  success. When the relay is only replaying the latest picture (no real call),
+  the refresh now takes its short call instead of being blocked; a live view of
+  another camera still makes it wait, since the gateway takes one call at a time.
+
 ## 2026-10-30
 
 ### Changed (Homebridge plugin 0.12.0, Home Assistant 0.3.9)

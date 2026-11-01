@@ -39,6 +39,8 @@ SWITCH_ATTEMPTS = 6
 CAPTURE_CACHE = 30.0
 CAPTURE_TIMEOUT = 10.0
 CAPTURE_SETTLE = 2.0
+# How long "refresh picture" waits for this camera's own live to write a fresh frame.
+CAPTURE_LIVE_WAIT = 6.0
 URL = "/api/bticino_hometouch/live/{entry_id}"
 
 
@@ -114,6 +116,9 @@ class LiveSource:
         self.active_session: str | None = None
         self.viewers: set[asyncio.Queue] = set()
         self.relay: asyncio.Task | None = None
+        # While a relay runs: "incoming"/"on_demand" hold a real camera call;
+        # "local" only replays the latest picture, so the camera is free.
+        self.mode: str | None = None
         self.capture_lock = asyncio.Lock()
 
     def url(self, hass: HomeAssistant, entry_id: str) -> str:
@@ -150,17 +155,21 @@ class LiveSource:
                 incoming = (await ipc_request(self.socket_path, {"command": "incoming_status"})).get("incoming")
             except (OSError, ValueError, asyncio.TimeoutError):
                 incoming = None
-            mode = "local"
+            mode = self.mode = "local"
             if incoming and not self.camera:
-                mode = "incoming"
+                mode = self.mode = "incoming"
             elif time.monotonic() - self.last_call_end >= CALL_COOLDOWN:
                 transport, protocol = await _open_udp(0)
                 port = transport.get_extra_info("sockname")[1]
+                # Claim the gateway's single call before awaiting, so a concurrent
+                # "refresh picture" waits for this live instead of racing a second call.
+                self.mode = "on_demand"
                 result = await self._start_call(session, port)
                 if result.get("ok"):
                     call_started, mode = True, "on_demand"
                     self.active_session = session
                 else:
+                    self.mode = "local"
                     _LOGGER.info("Live: camera call not started (%s); showing the latest picture", result.get("error"))
                     transport.close()
                     transport = None
@@ -181,7 +190,7 @@ class LiveSource:
                             None, last_call_lines, self.socket_path.parent / "camera-calls.log")
                         _LOGGER.warning("Live: no video from the camera; showing the latest picture. "
                                         "Camera call log:\n%s", "\n".join(lines) or "(empty)")
-                        mode = "local"
+                        mode = self.mode = "local"
                         transport.close()
                         transport, protocol = await _open_udp(LOCAL_FEED_PORT)
                         started = time.monotonic()
@@ -195,29 +204,42 @@ class LiveSource:
                 last = time.monotonic()
                 self._send(data)
         finally:
+            self.mode = None
             if transport is not None:
                 transport.close()
             if call_started:
                 await self._stop_call(session)
             self._send(None)
 
-    def busy(self) -> bool:
-        """A live view of any camera of the entry is running (one call at a time)."""
-        return any(other.relay is not None and not other.relay.done() for other in self.siblings)
+    def _calling(self) -> bool:
+        """A real camera call of this source is running (not just a local-picture replay)."""
+        return self.relay is not None and not self.relay.done() and self.mode in ("on_demand", "incoming")
 
     async def capture(self, frame: Path) -> str:
         """Renew `frame` with a short camera call; returns why it did not, or "".
 
-        The listener copies the call's last decoded frame to `frame` when the call
-        ends. A live view in progress is never interrupted: its picture is saved
-        when it ends.
+        The listener copies the call's last decoded frame to `frame` while a call
+        runs and when it ends. A live view in progress is never interrupted: if it
+        is this camera's own live, its running call already keeps the picture
+        current, so we use that instead of a second call the gateway would refuse.
         """
         # One capture at a time for the whole entry: the gateway takes one call.
         async with self.siblings[0].capture_lock:
             before = await asyncio.get_running_loop().run_in_executor(None, _mtime, frame)
             if before and time.time() - before < CAPTURE_CACHE:
                 return ""
-            if self.busy():
+            # This camera's own live view already refreshes its picture: no error,
+            # just wait briefly for the call's first decoded frame.
+            if self._calling():
+                deadline = time.monotonic() + CAPTURE_LIVE_WAIT
+                while time.monotonic() < deadline:
+                    after = await asyncio.get_running_loop().run_in_executor(None, _mtime, frame)
+                    if after and after != before:
+                        return ""
+                    await asyncio.sleep(0.25)
+                return ""
+            # A real call on another camera of the entry: the gateway takes one at a time.
+            if any(other._calling() for other in self.siblings):
                 return "live_running"
             wait = CALL_COOLDOWN - (time.monotonic() - self.last_call_end)
             if wait > 0:

@@ -72,12 +72,54 @@ async def test_refresh_picture_takes_one_short_call(hass, tmp_path, socket_enabl
         # Pressed again within 30 s: the picture is fresh, no new call.
         assert await source.capture(frame) == ""
         assert [r["command"] for r in requests].count("start_call") == 1
-        # A live view in progress is never interrupted.
+        # This camera's own live view is running: no second call and no error —
+        # the live already keeps the picture current.
         os.utime(frame, (time.time() - 60, time.time() - 60))
         source.relay = asyncio.get_running_loop().create_future()
-        assert await source.capture(frame) == "live_running"
+        source.mode = "on_demand"
+        with patch.object(live, "CAPTURE_LIVE_WAIT", 0.1):
+            assert await source.capture(frame) == ""
+        assert [r["command"] for r in requests].count("start_call") == 1
         source.relay.cancel()
     sender.close()
+
+
+async def test_refresh_picture_during_a_local_replay_still_takes_a_call(hass, tmp_path, socket_enabled):
+    """A relay only replaying the latest picture leaves the camera free, so a refresh works."""
+    frame = tmp_path / "camera-0.jpg"
+    requests = []
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    async def fake_ipc(path, request, timeout=12):
+        requests.append(request)
+        if request["command"] == "start_call":
+            sender.sendto(b"\x47" + b"\x00" * 187, ("127.0.0.1", request["video_port"]))
+        if request["command"] == "stop_call":
+            frame.write_bytes(b"fresh")
+        return {"ok": True}
+
+    source = live.LiveSource(Path("/tmp/unused.sock"))
+    source.relay = asyncio.get_running_loop().create_future()
+    source.mode = "local"  # the frozen picture is relayed; the camera is not in a call
+    with patch.object(live, "ipc_request", fake_ipc), patch.object(live, "CAPTURE_SETTLE", 0), \
+         patch.object(live, "CALL_COOLDOWN", 0):
+        assert await source.capture(frame) == ""
+        assert frame.read_bytes() == b"fresh"
+        assert [r["command"] for r in requests] == ["start_call", "stop_call"]
+    source.relay.cancel()
+    sender.close()
+
+
+async def test_refresh_picture_waits_for_a_live_on_another_camera(hass, tmp_path, socket_enabled):
+    """The gateway takes one call at a time: a real live on another camera blocks a refresh."""
+    source = live.LiveSource(Path("/tmp/unused.sock"), camera=1)
+    other = live.LiveSource(Path("/tmp/unused.sock"), camera=0)
+    other.relay = asyncio.get_running_loop().create_future()
+    other.mode = "on_demand"
+    source.siblings = other.siblings = [other, source]
+    with patch.object(live, "CALL_COOLDOWN", 0):
+        assert await source.capture(tmp_path / "camera-1.jpg") == "live_running"
+    other.relay.cancel()
 
 
 async def test_refresh_picture_reports_a_busy_camera(hass, tmp_path, socket_enabled):
