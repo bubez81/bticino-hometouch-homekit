@@ -624,6 +624,7 @@ def certificate_days_left(cert_path: Path | str, openssl: str = "openssl",
                 [openssl, "x509", "-enddate", "-noout", "-in", str(cert_path)],
                 capture_output=True, check=True)
             value = completed.stdout.decode("ascii", "replace").split("=", 1)[1].strip()
+            value = " ".join(value.split())  # openssl pads single-digit days with a second space
             not_after = calendar.timegm(time.strptime(value, "%b %d %H:%M:%S %Y %Z"))
             return (not_after - now) / 86400.0
         except (OSError, ValueError, IndexError, subprocess.CalledProcessError):
