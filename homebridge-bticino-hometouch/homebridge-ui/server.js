@@ -23,6 +23,7 @@ class UiServer extends HomebridgePluginUiServer {
     this.onRequest('/status', () => this.status());
     this.onRequest('/plants', body => this.helper('plants', [], body));
     this.onRequest('/apply', body => this.helper('apply', ['--plant-id', String(body?.plantId || ''), '--storage', this.storage], body));
+    this.onRequest('/renewal', body => this.renewal(body));
     this.onRequest('/test-open', body => this.testOpen(body));
     this.onRequest('/diagnostics', body => this.diagnostics(body));
     this.ready();
@@ -55,8 +56,37 @@ class UiServer extends HomebridgePluginUiServer {
     return {filename: `bticino-hometouch-diagnostica-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`, text};
   }
 
+  // Where the renewal setting lives: next to the SIP credentials, as the
+  // listener expects. Derived from onboarding.json so a moved folder still works.
+  renewalFile() {
+    const onboarding = JSON.parse(fs.readFileSync(path.join(this.storage, 'onboarding.json'), 'utf8'));
+    let credentials = onboarding.credentials_file;
+    if (!credentials) throw new RequestError('Configurazione del bridge non trovata', {});
+    if (!path.isAbsolute(credentials)) credentials = path.join(this.storage, credentials);
+    return path.join(path.dirname(credentials), 'renewal.json');
+  }
+
   status() {
-    return {configured: fs.existsSync(path.join(this.storage, 'onboarding.json')), storage: this.storage};
+    let renewal = false;
+    try { renewal = fs.existsSync(this.renewalFile()); } catch (_) { renewal = false; }
+    return {configured: fs.existsSync(path.join(this.storage, 'onboarding.json')), storage: this.storage, renewal};
+  }
+
+  // Enable (store the account password, verified first) or disable (delete it)
+  // certificate auto-renewal. The password reaches the helper's environment
+  // only and is written to a private 0600 file, never to config.json.
+  async renewal(body) {
+    if (body && body.enabled === false) {
+      const directory = listenerDirectory();
+      const result = await run(await this.python(),
+        [path.join(directory, 'bticino_plugin_setup.py'), 'renewal', '--storage', this.storage, '--disable'],
+        {cwd: directory, env: {...process.env, PYTHONPATH: directory}});
+      let reply;
+      try { reply = JSON.parse(result.stdout.trim().split('\n').pop()); } catch (_) { reply = null; }
+      if (!reply || !reply.ok) throw new RequestError(reply?.error || 'Operazione non riuscita', {});
+      return reply;
+    }
+    return this.helper('renewal', ['--storage', this.storage], body);
   }
 
   // A private Python environment with pyzipper, needed to read some plants'

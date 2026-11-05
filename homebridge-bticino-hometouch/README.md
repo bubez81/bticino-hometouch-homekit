@@ -81,6 +81,13 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
   reached for a minute. It closes again after 5 minutes without drops. Turn on
   its notifications in Apple Home to be told; turn it off in the plugin
   settings if you do not want it.
+- **Certificate auto-renewal (optional):** the bridge's certificate is valid
+  for about two years; when it expires the connection stops until you set it up
+  again. On the plugin's settings page, under **Certificate auto-renewal**, you
+  can let it renew itself (re-signed about 30 days before expiry, same private
+  key, no restart). It is off by default; when on it stores the dedicated
+  account's password in a private, owner-only file next to the SIP credentials
+  — never in `config.json` and never logged — and turning it off deletes it.
 
 ## Updating and removing
 

@@ -109,6 +109,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "BTicino HOMETOUCH",
+        "menu_options": {
+          "entrances": "Entrances and camera",
+          "renewal": "Certificate auto-renewal"
+        }
+      },
+      "entrances": {
         "title": "Entrances",
         "description": "One opening button per entrance: name and lock address, separated by commas. Example: `Scala=20, Esterno=21` (the entrance panel's lock is usually 20, a second one 21).",
         "data": {
@@ -120,11 +127,25 @@
           "gateway": "Address of the HOMETOUCH gateway at home, e.g. 192.168.1.50; the live video needs it, because the cloud server refuses camera calls. Empty: found automatically at the next ring.",
           "second_camera_name": "The entrance panel's next camera (the Door Entry app's camera arrow), shown only when the system has one."
         }
+      },
+      "renewal": {
+        "title": "Certificate auto-renewal",
+        "description": "The phone's certificate is valid for about two years; when it expires the connection stops until setup is redone. To renew it automatically (about 30 days before expiry), store the dedicated account's password. It is kept in a private, owner-only file, apart from the rest of the configuration, and never shown.{error}",
+        "data": {
+          "renewal_enabled": "Keep the certificate renewed automatically",
+          "email": "E-mail",
+          "password": "Password"
+        },
+        "data_description": {
+          "renewal_enabled": "Turn this off to delete the stored password and stop auto-renewal."
+        }
       }
     },
     "error": {
       "invalid_entrances": "Use name=address, separated by commas",
-      "invalid_gateway": "Use an IP address or host name, without port."
+      "invalid_gateway": "Use an IP address or host name, without port.",
+      "credentials_required": "Enter the account e-mail and password to enable auto-renewal",
+      "setup_failed": "Operation failed: {error}"
     }
   },
   "issues": {

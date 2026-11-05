@@ -5,6 +5,22 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-05
+
+### Added (Home Assistant 0.3.11, plugin 0.13.0)
+
+- **Automatic certificate renewal (opt-in).** The phone's client certificate is
+  valid for about two years; when it expires the connection stops until the
+  setup is redone. You can now let it renew itself: it is re-signed about 30 days
+  before expiry, reusing the existing private key, and the renewed certificate
+  is picked up at the next reconnection with no restart. It is **off by default**
+  and, when enabled, stores the dedicated account's password in a private,
+  owner-only file (`renewal.json`), kept apart from the rest of the configuration
+  and never shown or logged — turning it off deletes that password.
+  - Home Assistant: *Configure → Certificate auto-renewal*.
+  - Homebridge plugin: the plugin's settings page, under *Certificate
+    auto-renewal*.
+
 ## 2026-11-01
 
 ### Fixed (Home Assistant 0.3.10)

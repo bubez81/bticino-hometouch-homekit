@@ -119,6 +119,34 @@ class PluginSetupTests(unittest.TestCase):
             self.assertEqual(saved, {"SipAccount": "a@gw", "SipPassword": "same", "Username": "digest-user"})
             self.assertEqual((private / "sip_credentials.json").stat().st_mode & 0o777, 0o600)
 
+    def test_renewal_enable_stores_password_then_disable_removes_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = Path(tmp)
+            private = storage / "private" / "sip"
+            private.mkdir(parents=True)
+            onboard.atomic_private_json(private / "sip_credentials.json", {"SipAccount": "a@gw"})
+            onboard.atomic_private_json(storage / "onboarding.json",
+                                        {"credentials_file": "private/sip/sip_credentials.json"})
+            renewal_path = private / onboard.RENEWAL_FILENAME
+            # Enable: the account is verified (FakeClient.login) and the password stored 0600.
+            code, result = self.run_setup("renewal", "--storage", tmp)
+            self.assertEqual((code, result), (0, {"ok": True, "enabled": True}))
+            saved = json.loads(renewal_path.read_text())
+            self.assertEqual(saved["email"], "bridge@example.com")
+            self.assertEqual(saved["password"], "secret")
+            self.assertTrue(saved["enabled"])
+            self.assertEqual(renewal_path.stat().st_mode & 0o777, 0o600)
+            # Disable: no cloud call, the stored password is deleted.
+            code, result = self.run_setup("renewal", "--storage", tmp, "--disable")
+            self.assertEqual((code, result), (0, {"ok": True, "enabled": False}))
+            self.assertFalse(renewal_path.exists())
+
+    def test_renewal_without_configuration_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, result = self.run_setup("renewal", "--storage", tmp, "--disable")
+            self.assertEqual(code, 1)
+            self.assertIn("non trovata", result["error"])
+
     def test_missing_credentials_is_reported_not_raised(self):
         out = io.StringIO()
         with patch.dict(os.environ, {"BTICINO_DOORENTRY_EMAIL": "", "BTICINO_DOORENTRY_PASSWORD": ""}), redirect_stdout(out):

@@ -109,6 +109,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "BTicino HOMETOUCH",
+        "menu_options": {
+          "entrances": "Ingressi e telecamera",
+          "renewal": "Rinnovo automatico del certificato"
+        }
+      },
+      "entrances": {
         "title": "Ingressi",
         "description": "Un pulsante di apertura per ingresso: nome e indirizzo della serratura, separati da virgole. Esempio: `Scala=20, Esterno=21` (la serratura del posto esterno di solito è 20, una seconda 21).",
         "data": {
@@ -120,11 +127,25 @@
           "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50; serve per il live, perché il server cloud rifiuta le chiamate alla telecamera. Vuoto: trovato in automatico alla prossima suonata.",
           "second_camera_name": "La telecamera successiva del posto esterno (la freccia dell'app Door Entry); compare solo se l'impianto ce l'ha."
         }
+      },
+      "renewal": {
+        "title": "Rinnovo automatico del certificato",
+        "description": "Il certificato del telefono dura circa due anni; alla scadenza la connessione si ferma finché non si rifà la configurazione. Per rinnovarlo da solo (circa 30 giorni prima della scadenza), salva la password dell'account dedicato. Viene conservata in un file privato, leggibile solo dal proprietario, separata dal resto della configurazione, e non viene mai mostrata.{error}",
+        "data": {
+          "renewal_enabled": "Mantieni il certificato rinnovato automaticamente",
+          "email": "E-mail",
+          "password": "Password"
+        },
+        "data_description": {
+          "renewal_enabled": "Disattiva per eliminare la password salvata e fermare il rinnovo automatico."
+        }
       }
     },
     "error": {
       "invalid_entrances": "Usa nome=indirizzo, separati da virgole",
-      "invalid_gateway": "Usa un indirizzo IP o un nome host, senza porta."
+      "invalid_gateway": "Usa un indirizzo IP o un nome host, senza porta.",
+      "credentials_required": "Inserisci e-mail e password dell'account per attivare il rinnovo automatico",
+      "setup_failed": "Operazione non riuscita: {error}"
     }
   },
   "issues": {

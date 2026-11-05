@@ -200,10 +200,22 @@ class HometouchConfigFlow(ConfigFlow, domain=DOMAIN):
         return HometouchOptionsFlow()
 
 
+CONF_RENEWAL_ENABLED = "renewal_enabled"
+
+
 class HometouchOptionsFlow(OptionsFlowWithReload):
-    """Entrances: names and lock addresses, e.g. "Scala=20, Esterno=21"."""
+    """Entrances (names and lock addresses, e.g. "Scala=20, Esterno=21") and,
+    for a standalone entry, certificate auto-renewal."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        # Only a standalone entry runs the listener itself and can renew its
+        # certificate; older entries using an external listener go straight to
+        # the entrances form.
+        if self.config_entry.data.get(CONF_STORAGE):
+            return self.async_show_menu(step_id="init", menu_options=["entrances", "renewal"])
+        return await self.async_step_entrances()
+
+    async def async_step_entrances(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         current = format_entrances(self.config_entry.options.get(CONF_ENTRANCES, []))
         gateway = self.config_entry.options.get(CONF_GATEWAY, "")
@@ -224,4 +236,33 @@ class HometouchOptionsFlow(OptionsFlowWithReload):
         if self.config_entry.data.get(CONF_STORAGE):
             schema[vol.Optional(CONF_GATEWAY, description={"suggested_value": gateway})] = str
             schema[vol.Optional(CONF_SECOND_CAMERA, default=second_camera)] = str
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema), errors=errors)
+        return self.async_show_form(step_id="entrances", data_schema=vol.Schema(schema), errors=errors)
+
+    async def async_step_renewal(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Store (or clear) the account password so the certificate renews itself."""
+        storage = self.config_entry.data.get(CONF_STORAGE)
+        errors: dict[str, str] = {}
+        placeholders = {"error": ""}
+        if user_input is not None:
+            if not user_input.get(CONF_RENEWAL_ENABLED):
+                result = await run_setup("renewal", "", "", "--storage", storage, "--disable")
+            else:
+                email = (user_input.get(CONF_EMAIL) or "").strip()
+                password = user_input.get(CONF_PASSWORD) or ""
+                if not email or not password:
+                    errors["base"] = "credentials_required"
+                    result = {"ok": False}
+                else:
+                    result = await run_setup("renewal", email, password, "--storage", storage)
+            if result.get("ok"):
+                # Keep the options unchanged; create_entry reloads the entry so
+                # the listener re-reads the new setting at once.
+                return self.async_create_entry(data=dict(self.config_entry.options))
+            if not errors:
+                errors["base"] = "setup_failed"
+                placeholders["error"] = result.get("error", "")
+        return self.async_show_form(step_id="renewal", data_schema=vol.Schema({
+            vol.Required(CONF_RENEWAL_ENABLED, default=True): bool,
+            vol.Optional(CONF_EMAIL): str,
+            vol.Optional(CONF_PASSWORD): str,
+        }), errors=errors, description_placeholders=placeholders)

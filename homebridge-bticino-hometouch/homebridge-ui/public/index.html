@@ -23,6 +23,25 @@
   <div class="alert alert-success mb-2">Impianto collegato. Controlla i nomi degli ingressi, salva e riavvia Homebridge;
     poi in Casa aggiungi <strong>Videocitofono</strong> con il codice mostrato nel log.</div>
   <div id="tests" class="mb-2"></div>
+  <hr>
+  <p class="mb-1"><strong>Rinnovo automatico del certificato</strong></p>
+  <p class="text-muted small">
+    Il certificato del telefono dura circa due anni; alla scadenza la connessione si ferma finché non
+    rifai la configurazione. Attivando il rinnovo automatico salvi la password dell'account dedicato in un
+    file privato (solo proprietario), separata da <code>config.json</code>, e il certificato si rinnova da
+    solo circa 30 giorni prima della scadenza.
+  </p>
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" id="renew-enabled">
+    <label class="form-check-label" for="renew-enabled">Mantieni il certificato rinnovato automaticamente</label>
+  </div>
+  <div id="renew-credentials">
+    <div class="mb-2"><label class="form-label" for="renew-email">Email dell'account dedicato</label>
+      <input class="form-control" id="renew-email" type="email" autocomplete="username"></div>
+    <div class="mb-2"><label class="form-label" for="renew-password">Password</label>
+      <input class="form-control" id="renew-password" type="password" autocomplete="current-password"></div>
+  </div>
+  <button class="btn btn-primary" id="renew-save">Salva</button>
 </div>
 <script>
 (async () => {
@@ -60,8 +79,34 @@
     } catch (error) { homebridge.toast.error(error.message, 'Diagnostica non riuscita'); }
     finally { homebridge.hideSpinner(); }
   });
+  // Certificate auto-renewal: reflect the saved state, and save the password
+  // (or clear it) through the UI backend — never into config.json.
+  const wireRenewal = (enabled) => {
+    const toggle = document.getElementById('renew-enabled');
+    toggle.checked = !!enabled;
+    const sync = () => show('renew-credentials', toggle.checked);
+    toggle.addEventListener('change', sync);
+    sync();
+    document.getElementById('renew-save').addEventListener('click', async () => {
+      homebridge.showSpinner();
+      try {
+        if (toggle.checked) {
+          const email = document.getElementById('renew-email').value.trim();
+          const password = document.getElementById('renew-password').value;
+          if (!email || !password) throw new Error('Inserisci email e password dell\'account dedicato');
+          await homebridge.request('/renewal', {enabled: true, email, password});
+          document.getElementById('renew-password').value = '';
+          homebridge.toast.success('Rinnovo automatico attivato', 'Certificato');
+        } else {
+          await homebridge.request('/renewal', {enabled: false});
+          homebridge.toast.success('Rinnovo automatico disattivato', 'Certificato');
+        }
+      } catch (error) { homebridge.toast.error(error.message, 'Operazione non riuscita'); }
+      finally { homebridge.hideSpinner(); }
+    });
+  };
   const status = await homebridge.request('/status');
-  if (status.configured) { show('done', true); await testButtons(); homebridge.showSchemaForm(); return; }
+  if (status.configured) { show('done', true); await testButtons(); wireRenewal(status.renewal); homebridge.showSchemaForm(); return; }
   show('setup', true);
   document.getElementById('login').addEventListener('click', async () => {
     homebridge.showSpinner();

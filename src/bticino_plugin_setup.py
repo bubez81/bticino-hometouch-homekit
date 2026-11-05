@@ -6,6 +6,8 @@
                                  private files and suggest the first entrance
   refresh --storage              re-read the bridge's endpoint from the cloud and
                                  update its saved credentials (creates nothing)
+  renewal --storage              store the account password so the certificate
+                                 renews itself before expiry (--disable removes it)
 
 The email and password come from BTICINO_DOORENTRY_EMAIL and
 BTICINO_DOORENTRY_PASSWORD and are never written. Progress goes to stderr; the
@@ -121,19 +123,46 @@ def refresh_command(args):
     return {"ok": True, "updated": updated}
 
 
+def _credentials_file(storage: Path) -> Path:
+    onboarding = json.loads((storage / "onboarding.json").read_text(encoding="utf-8"))
+    credentials_file = Path(onboarding["credentials_file"])
+    if not credentials_file.is_absolute():
+        credentials_file = storage / credentials_file
+    return credentials_file
+
+
+def renewal_command(args):
+    """Enable (store the password) or disable (remove it) certificate auto-renewal."""
+    storage = Path(args.storage).resolve()
+    try:
+        renewal_path = _credentials_file(storage).parent / onboard.RENEWAL_FILENAME
+    except (OSError, ValueError, KeyError) as error:
+        raise onboard.OnboardingError("Configurazione del bridge non trovata") from error
+    if args.disable:
+        renewal_path.unlink(missing_ok=True)
+        return {"ok": True, "enabled": False}
+    # Verify the account before storing its password.
+    _, email = session(args.portal)
+    onboard.write_renewal(renewal_path, email=email,
+                          password=os.environ.get("BTICINO_DOORENTRY_PASSWORD", ""), portal=args.portal)
+    return {"ok": True, "enabled": True}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["plants", "apply", "refresh"])
+    parser.add_argument("command", choices=["plants", "apply", "refresh", "renewal"])
     parser.add_argument("--portal", default=onboard.DEFAULT_PORTAL)
     parser.add_argument("--plant-id")
     parser.add_argument("--storage")
     parser.add_argument("--openssl", default=shutil.which("openssl") or "openssl")
+    parser.add_argument("--disable", action="store_true", help="with 'renewal': turn auto-renewal off")
     parser.add_argument("--device-name", default=DEVICE_NAME, help="name of the phone shown in the Door Entry app")
     args = parser.parse_args(argv)
     try:
-        if args.command in ("apply", "refresh") and not args.storage:
+        if args.command in ("apply", "refresh", "renewal") and not args.storage:
             raise onboard.OnboardingError("--storage mancante")
-        result = {"plants": plants_command, "apply": apply_command, "refresh": refresh_command}[args.command](args)
+        result = {"plants": plants_command, "apply": apply_command, "refresh": refresh_command,
+                  "renewal": renewal_command}[args.command](args)
     except onboard.OnboardingError as error:
         result = {"ok": False, "error": str(error)}
     except Exception as error:  # report, never print secrets or tracebacks with values
