@@ -99,6 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HometouchConfigEntry) ->
                     raise
                 await asyncio.sleep(1)
         hub = HometouchHub(hass, api, info, entry.entry_id)
+        if runtime:
+            hub.storage = runtime.storage
         await hub.async_start()
     except AuthError as err:
         if runtime:

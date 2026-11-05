@@ -103,6 +103,9 @@
           "unstable": "Instabile: riavvia il HOMETOUCH",
           "disconnected": "Scollegato"
         }
+      },
+      "certificate_expiry": {
+        "name": "Scadenza certificato"
       }
     }
   },
@@ -152,6 +155,10 @@
     "gateway_unstable": {
       "title": "Il HOMETOUCH continua a chiudere il collegamento",
       "description": "Il HOMETOUCH ha chiuso il collegamento di Home Assistant {drops} volte in {minutes} minuti. Nel frattempo suonate e aperture dei cancelli possono andare perse.\n\nRiavvia il HOMETOUCH (il videocitofono di casa, non il server MyHOME). Questo avviso sparisce da solo quando il collegamento resta su per 5 minuti."
+    },
+    "certificate_expiring": {
+      "title": "Il certificato del videocitofono sta per scadere",
+      "description": "Il certificato del telefono scade tra {days} giorno/i. Alla scadenza l'integrazione non riesce più a collegarsi e va rifatta la configurazione.\n\nAttiva **Configura → Rinnovo automatico certificato** (rinnova il certificato da solo), oppure rifai la configurazione per ottenere un certificato nuovo. Questo avviso sparisce da solo quando il certificato viene rinnovato."
     }
   }
 }

@@ -5,14 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import asyncio
+import json
 import logging
+import math
 import time
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .api import ApiError, AuthError, HometouchApi
 from .const import BUS_EVENT, DOMAIN, RECONNECT_MAX_SECONDS, RECONNECT_MIN_SECONDS
@@ -32,6 +36,30 @@ STABLE_AFTER = 300
 DOWN_AFTER = 60
 
 CONNECTED, UNSTABLE, DISCONNECTED = "connected", "unstable", "disconnected"
+
+# The client certificate is valid ~2 years. Auto-renewal (when on) re-signs it
+# about 30 days out; a certificate still inside this window means renewal is off
+# or failing, so warn then. The daily check keeps the sensor fresh.
+CERT_EXPIRY_ISSUE_DAYS = 14
+CERT_CHECK_INTERVAL = timedelta(hours=12)
+
+
+def read_certificate_not_after(storage: Path) -> datetime | None:
+    """The client certificate's expiry (timezone-aware UTC), or None if unreadable."""
+    try:
+        from cryptography import x509
+
+        onboarding = json.loads((storage / "onboarding.json").read_text(encoding="utf-8"))
+        cert_file = Path(onboarding["certificate_file"])
+        if not cert_file.is_absolute():
+            cert_file = storage / cert_file
+        cert = x509.load_pem_x509_certificate(cert_file.read_bytes())
+        try:
+            return cert.not_valid_after_utc
+        except AttributeError:  # cryptography < 42
+            return cert.not_valid_after.replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, KeyError, TypeError, ImportError):
+        return None
 
 
 class HometouchHub:
@@ -61,6 +89,11 @@ class HometouchHub:
         self._cancel_stable: Callable[[], None] | None = None
         self.disconnected = False
         self._cancel_down: Callable[[], None] | None = None
+        # Standalone entries only: the folder with the client certificate, and
+        # its expiry for the diagnostic sensor and the expiry warning.
+        self.storage: Path | None = None
+        self.certificate_not_after: datetime | None = None
+        self._cancel_cert: Callable[[], None] | None = None
 
     @property
     def connection(self) -> str:
@@ -72,6 +105,28 @@ class HometouchHub:
     @property
     def issue_id(self) -> str:
         return f"gateway_unstable_{self.entry_id}"
+
+    @property
+    def certificate_issue_id(self) -> str:
+        return f"certificate_expiring_{self.entry_id}"
+
+    async def _check_certificate(self, _now: datetime | None = None) -> None:
+        """Read the certificate's expiry; warn in Repairs when it is near and
+        auto-renewal is clearly not keeping it current. Never raises."""
+        if not self.storage:
+            return
+        not_after = await self.hass.async_add_executor_job(read_certificate_not_after, self.storage)
+        self.certificate_not_after = not_after
+        days = (math.ceil((not_after - dt_util.utcnow()).total_seconds() / 86400)
+                if not_after is not None else None)
+        if days is not None and days <= CERT_EXPIRY_ISSUE_DAYS:
+            ir.async_create_issue(
+                self.hass, DOMAIN, self.certificate_issue_id, is_fixable=False,
+                severity=ir.IssueSeverity.WARNING, translation_key="certificate_expiring",
+                translation_placeholders={"days": str(max(days, 0))})
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, self.certificate_issue_id)
+        self._notify(None)
 
     @property
     def entrances(self) -> list[str]:
@@ -93,12 +148,16 @@ class HometouchHub:
         self.state = await self.api.state()
         self._registration_changed()
         self._task = self.hass.async_create_background_task(self._run(), f"{BUS_EVENT}_stream")
+        if self.storage:
+            await self._check_certificate()
+            self._cancel_cert = async_track_time_interval(
+                self.hass, self._check_certificate, CERT_CHECK_INTERVAL)
 
     async def async_stop(self) -> None:
-        for cancel in (self._cancel_stable, self._cancel_down):
+        for cancel in (self._cancel_stable, self._cancel_down, self._cancel_cert):
             if cancel:
                 cancel()
-        self._cancel_stable = self._cancel_down = None
+        self._cancel_stable = self._cancel_down = self._cancel_cert = None
         if self._task:
             self._task.cancel()
             try:

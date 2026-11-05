@@ -7,6 +7,15 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-05
 
+### Added (Home Assistant 0.3.12)
+
+- **Certificate expiry sensor and warning.** A diagnostic sensor *Certificate
+  expiry* shows when the phone's certificate runs out, and a *Settings →
+  Repairs* warning appears when it is within 14 days of expiry (auto-renewal, if
+  on, pushes the date forward and the warning clears by itself). It is the
+  safety net for auto-renewal: if renewal is off or ever fails, you are told
+  before the connection stops. Standalone entries only.
+
 ### Added (Home Assistant 0.3.11, plugin 0.13.0)
 
 - **Automatic certificate renewal (opt-in).** The phone's client certificate is

@@ -103,6 +103,9 @@
           "unstable": "Unstable: restart the HOMETOUCH",
           "disconnected": "Disconnected"
         }
+      },
+      "certificate_expiry": {
+        "name": "Certificate expiry"
       }
     }
   },
@@ -152,6 +155,10 @@
     "gateway_unstable": {
       "title": "The HOMETOUCH keeps dropping the connection",
       "description": "The HOMETOUCH closed Home Assistant's connection {drops} times in {minutes} minutes. Rings and gate openings can be lost meanwhile.\n\nRestart the HOMETOUCH (the video door entry unit at home, not the MyHOME server). This message goes away by itself when the connection stays up for 5 minutes."
+    },
+    "certificate_expiring": {
+      "title": "The video door entry certificate is about to expire",
+      "description": "The phone's certificate expires in {days} day(s). When it expires the integration can no longer connect and the setup has to be redone.\n\nTurn on **Configure → Certificate auto-renewal** (it renews the certificate by itself), or redo the setup to get a fresh certificate. This message clears by itself once the certificate is renewed."
     }
   }
 }
