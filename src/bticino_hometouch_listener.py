@@ -88,6 +88,14 @@ CERT_FILE = Path(CONFIG.get("certificate_file", "/opt/bticino-gateway/certs/clie
 KEY_FILE = Path(CONFIG.get("private_key_file", "/opt/bticino-gateway/private/client.key"))
 CA_FILE = Path(CONFIG.get("ca_file", "/opt/bticino-gateway/certs/ca-chain.cert.pem"))
 
+# Optional certificate auto-renewal. Off unless renewal.json (written by the
+# onboarding/UI when the user opts in) sits next to the SIP credentials and
+# holds the account password. The renewed certificate is read on the next
+# reconnection, so no restart is needed.
+RENEWAL_FILE = Path(CONFIG.get("renewal_file", str(CREDS_FILE.parent / "renewal.json")))
+RENEWAL_THRESHOLD_DAYS = float(CONFIG.get("cert_renewal_threshold_days", 30))
+RENEWAL_CHECK_SECONDS = float(CONFIG.get("cert_renewal_check_seconds", 86400))
+
 SERVER_IP = CONFIG.get("sip_server") or os.environ.get("BTICINO_SIP_SERVER", "")
 SERVER_PORT = int(CONFIG.get("sip_port", 5061))
 DOMAIN = CONFIG.get("sip_domain") or os.environ.get("BTICINO_SIP_DOMAIN", "")
@@ -2170,6 +2178,43 @@ signal.signal(
 )
 
 
+def sip_account_common_name():
+    """The certificate's CN is the dedicated SIP account, kept in the credentials."""
+    try:
+        return json.loads(CREDS_FILE.read_text(encoding="utf-8")).get("SipAccount")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def certificate_renewal_loop():
+    """Daily: renew the client certificate when it nears expiry and auto-renewal
+    is enabled. Reuses the existing private key, so the next reconnection picks
+    up the new certificate with no restart. Never lets an error stop the loop."""
+    import bticino_onboard
+    while RUNNING:
+        try:
+            renewal = bticino_onboard.load_renewal(RENEWAL_FILE)
+            common_name = sip_account_common_name()
+            if renewal.get("enabled") and renewal.get("password") and common_name:
+                result = bticino_onboard.renew_if_due(
+                    cert_path=CERT_FILE, key_path=KEY_FILE, ca_path=CA_FILE,
+                    common_name=common_name, renewal=renewal,
+                    threshold_days=RENEWAL_THRESHOLD_DAYS, openssl=OPENSSL, log=log)
+                if result.get("renewed"):
+                    log("Certificato rinnovato: sarà usato alla prossima riconnessione")
+        except Exception as exc:  # pragma: no cover - the loop must outlive any error
+            log(f"Rinnovo certificato: errore nel ciclo ({type(exc).__name__})")
+        waited = 0.0
+        while RUNNING and waited < RENEWAL_CHECK_SECONDS:
+            time.sleep(min(5.0, RENEWAL_CHECK_SECONDS - waited))
+            waited += 5.0
+
+
+def start_certificate_renewal():
+    threading.Thread(target=certificate_renewal_loop, name="bticino-cert-renew",
+                     daemon=True).start()
+
+
 def main():
     global ENTRANCE_PROFILES, IPC_MODULE, ENTRANCE_OPENER
     validate_runtime_settings()
@@ -2221,6 +2266,7 @@ def main():
         log(f"Ultima suonata non ripristinata: {type(exc).__name__}")
     api_server = bticino_api.start(CONFIG, API_BUS, api_info, api_command, api_snapshot, log=log)
     start_post_call_fallback(latest_snapshot())
+    start_certificate_renewal()
 
     log("=" * 70)
     log("HOMETOUCH SIP diagnostic listener")

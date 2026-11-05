@@ -189,7 +189,10 @@ async def test_options_gateway_address_for_the_standalone_setup(hass, listener, 
     with patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        menu = await hass.config_entries.options.async_init(entry.entry_id)
+        assert menu["type"] is FlowResultType.MENU
+        form = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "entrances"})
         bad = await hass.config_entries.options.async_configure(
             form["flow_id"], {"entrances": "Scala=20", "gateway": "http://x:5061"})
         assert bad["errors"] == {"gateway": "invalid_gateway"}
@@ -198,6 +201,51 @@ async def test_options_gateway_address_for_the_standalone_setup(hass, listener, 
         assert ok["type"] is FlowResultType.CREATE_ENTRY
         await hass.async_block_till_done()
     assert entry.options["gateway"] == "192.0.2.50"
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_options_enable_and_disable_certificate_renewal(hass, listener, tmp_path):
+    from unittest.mock import AsyncMock, patch
+    entry = MockConfigEntry(domain=DOMAIN, data={"storage": str(tmp_path), CONF_HOST: "127.0.0.1",
+                                                 CONF_PORT: listener.port, CONF_TOKEN: TOKEN},
+                            options={"entrances": [{"name": "Scala", "address": "20"}]})
+    entry.add_to_hass(hass)
+    runtime = AsyncMock()
+    with patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Enable: a password is required, then the setup helper is invoked.
+        with patch("custom_components.bticino_hometouch.config_flow.run_setup",
+                   new=AsyncMock(return_value={"ok": True, "enabled": True})) as run:
+            menu = await hass.config_entries.options.async_init(entry.entry_id)
+            assert menu["type"] is FlowResultType.MENU
+            form = await hass.config_entries.options.async_configure(
+                menu["flow_id"], {"next_step_id": "renewal"})
+            missing = await hass.config_entries.options.async_configure(
+                form["flow_id"], {"renewal_enabled": True})
+            assert missing["errors"] == {"base": "credentials_required"}
+            ok = await hass.config_entries.options.async_configure(
+                missing["flow_id"], {"renewal_enabled": True, "email": "a@b.com", "password": "pw"})
+            assert ok["type"] is FlowResultType.CREATE_ENTRY
+            assert run.await_args.args[:3] == ("renewal", "a@b.com", "pw")
+            assert "--storage" in run.await_args.args
+        await hass.async_block_till_done()
+        # The entrances are untouched by saving the renewal setting.
+        assert entry.options["entrances"] == [{"name": "Scala", "address": "20"}]
+
+        # Disable: the helper is called with --disable and no credentials.
+        with patch("custom_components.bticino_hometouch.config_flow.run_setup",
+                   new=AsyncMock(return_value={"ok": True, "enabled": False})) as run_off:
+            menu = await hass.config_entries.options.async_init(entry.entry_id)
+            form = await hass.config_entries.options.async_configure(
+                menu["flow_id"], {"next_step_id": "renewal"})
+            ok = await hass.config_entries.options.async_configure(
+                form["flow_id"], {"renewal_enabled": False})
+            assert ok["type"] is FlowResultType.CREATE_ENTRY
+            assert run_off.await_args.args[0] == "renewal"
+            assert "--disable" in run_off.await_args.args
+        await hass.async_block_till_done()
     await hass.config_entries.async_unload(entry.entry_id)
 
 

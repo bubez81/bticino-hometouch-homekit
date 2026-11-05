@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, for which setup-python no longer
+    # provides Python 3.9 (the oldest version the listener still supports).
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:

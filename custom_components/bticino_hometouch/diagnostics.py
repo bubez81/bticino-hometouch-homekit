@@ -38,6 +38,13 @@ def describe_phone(storage: Path) -> dict[str, Any]:
 
     files = {key: private(key) for key in ("credentials_file", "certificate_file", "private_key_file", "ca_file")}
     result["files"] = {key: (path is not None and path.exists()) for key, path in files.items()}
+    # Whether certificate auto-renewal is on — the boolean only, never the stored password.
+    try:
+        credentials_file = files["credentials_file"]
+        renewal = json.loads((credentials_file.parent / "renewal.json").read_text(encoding="utf-8"))
+        result["auto_renewal"] = bool(renewal.get("enabled") and renewal.get("password"))
+    except (OSError, ValueError, AttributeError):
+        result["auto_renewal"] = False
     account = ""
     try:
         credentials = json.loads(files["credentials_file"].read_text(encoding="utf-8"))

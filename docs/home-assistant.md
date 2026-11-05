@@ -48,7 +48,8 @@ the system and gives you:
    Sign in with the dedicated account and choose the system if you have more
    than one. In about a minute the phone is created (it appears in the Door
    Entry app as *Home Assistant BTicino*) and FFmpeg is downloaded. The
-   password is used only for this step and never stored.
+   password is used only for this step and never stored, unless you later turn
+   on certificate auto-renewal (see *Keeping the certificate valid*).
 3. On the integration, **Configure** → **Entrances**: a name and the lock
    address of each gate, separated by commas, for example
    `Scala=20, Esterno=21`. The entrance panel's own lock is usually `20`, a
@@ -169,6 +170,22 @@ dot; tap it to open *Repairs* when it is unstable. Hide the line with
 An opening asked while the connection is down waits up to 20 seconds for it to
 come back, then for the HOMETOUCH's answer; the button reports an error when
 the gate could not be opened.
+
+## Keeping the certificate valid
+
+The phone's client certificate is valid for about two years. When it expires the
+integration can no longer register, and the setup has to be redone. You can let
+it renew itself instead: **Configure → Certificate auto-renewal**, tick *Keep the
+certificate renewed automatically* and enter the dedicated account's e-mail and
+password. The certificate is then re-signed about 30 days before it expires,
+reusing the same private key, and the renewed certificate is used at the next
+reconnection with no restart.
+
+This is **off by default**. When on, it stores the account password in a
+private, owner-only file (`renewal.json`) inside `/config/bticino_hometouch`,
+kept apart from the rest of the configuration and never shown or logged; it is
+included in Home Assistant backups. Turning the option off deletes that
+password. Leaving it off changes nothing: the password from setup is not kept.
 
 ## Updating and removing
 

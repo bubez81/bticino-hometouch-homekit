@@ -23,6 +23,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -567,6 +568,149 @@ def atomic_private_json(path: Path, value: Any) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+RENEWAL_FILENAME = "renewal.json"
+
+
+def generate_csr_from_key(openssl: str, common_name: str,
+                          key_path: Path, csr_path: Path) -> str:
+    """A fresh CSR for `common_name` signed with the EXISTING private key, so a
+    renewal re-keys nothing: the new certificate matches the key already in use
+    and no key/certificate mismatch window opens while the file is swapped."""
+    safe_cn = common_name.replace("/", "_").replace("\x00", "")
+    if shutil.which(openssl):
+        run_openssl(openssl, ["req", "-new", "-sha256", "-key", str(key_path),
+                              "-subj", f"/CN={safe_cn}", "-out", str(csr_path)])
+        return csr_path.read_text(encoding="ascii")
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    from cryptography.x509.oid import NameOID
+    key = load_pem_private_key(key_path.read_bytes(), password=None)
+    csr = (x509.CertificateSigningRequestBuilder()
+           .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, safe_cn)]))
+           .sign(key, hashes.SHA256()))
+    text = csr.public_bytes(serialization.Encoding.PEM).decode("ascii")
+    csr_path.write_text(text, encoding="ascii")
+    return text
+
+
+def certificate_days_left(cert_path: Path | str, openssl: str = "openssl",
+                          now: float | None = None) -> float | None:
+    """Days until the PEM certificate at `cert_path` expires, or None when it
+    cannot be read. Uses `cryptography` when present, else the openssl CLI."""
+    now = time.time() if now is None else now
+    cert_path = Path(cert_path)
+    try:
+        from cryptography import x509
+    except ImportError:
+        x509 = None
+    if x509 is not None:
+        try:
+            from datetime import timezone
+            cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+            try:
+                not_after = cert.not_valid_after_utc.timestamp()
+            except AttributeError:  # cryptography < 42
+                not_after = cert.not_valid_after.replace(tzinfo=timezone.utc).timestamp()
+            return (not_after - now) / 86400.0
+        except (OSError, ValueError):
+            return None
+    if shutil.which(openssl):
+        try:
+            import calendar
+            completed = subprocess.run(
+                [openssl, "x509", "-enddate", "-noout", "-in", str(cert_path)],
+                capture_output=True, check=True)
+            value = completed.stdout.decode("ascii", "replace").split("=", 1)[1].strip()
+            value = " ".join(value.split())  # openssl pads single-digit days with a second space
+            not_after = calendar.timegm(time.strptime(value, "%b %d %H:%M:%S %Y %Z"))
+            return (not_after - now) / 86400.0
+        except (OSError, ValueError, IndexError, subprocess.CalledProcessError):
+            return None
+    return None
+
+
+def load_renewal(path: Path | str) -> dict[str, Any]:
+    """The stored auto-renewal settings (portal, email, password, enabled), or
+    {} when absent/unreadable. The password lives here, apart from config.json,
+    so it never reaches a log or a diagnostic dump."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_renewal(path: Path | str, *, email: str, password: str,
+                  portal: str = DEFAULT_PORTAL, enabled: bool = True) -> None:
+    """Persist the auto-renewal settings with owner-only permissions (0600)."""
+    atomic_private_json(Path(path), {
+        "enabled": bool(enabled),
+        "portal": portal or DEFAULT_PORTAL,
+        "email": email,
+        "password": password,
+    })
+
+
+def renew_certificate(*, cert_path: Path, key_path: Path, ca_path: Path, common_name: str,
+                      portal: str, email: str, password: str, openssl: str = "openssl",
+                      client_factory=None, log=print) -> None:
+    """Sign a new certificate for `common_name` reusing the existing key and put
+    it in place of the old one. Only the certificate and CA files change; the
+    private key is untouched, so every moment on disk is a matching pair."""
+    factory = client_factory or EliotClient
+    client = factory(portal)
+    client.login(email, password)
+    fd, csr_name = tempfile.mkstemp(prefix=".renew-csr-", dir=str(cert_path.parent))
+    os.close(fd)
+    csr_path = Path(csr_name)
+    cert_tmp = Path(str(cert_path) + ".new")
+    ca_tmp = Path(str(ca_path) + ".new")
+    try:
+        csr = generate_csr_from_key(openssl, common_name, key_path, csr_path)
+        blob = client.sign_certificate(common_name, csr)
+        extract_certificates(blob, common_name, cert_tmp, ca_tmp)
+        # Certificate first, then CA: during the sub-millisecond gap the new
+        # certificate still chains to the old (same BTicino) CA, and both match
+        # the unchanged key.
+        os.replace(cert_tmp, cert_path)
+        os.replace(ca_tmp, ca_path)
+    finally:
+        csr_path.unlink(missing_ok=True)
+        cert_tmp.unlink(missing_ok=True)
+        ca_tmp.unlink(missing_ok=True)
+
+
+def renew_if_due(*, cert_path: Path | str, key_path: Path | str, ca_path: Path | str,
+                 common_name: str, renewal: dict[str, Any], threshold_days: float = 30.0,
+                 openssl: str = "openssl", client_factory=None, now: float | None = None,
+                 log=print) -> dict[str, Any]:
+    """Renew the certificate when it is within `threshold_days` of expiry and
+    auto-renewal is enabled. Returns what it decided; never raises."""
+    if not renewal or not renewal.get("enabled") or not renewal.get("password") \
+            or not renewal.get("email"):
+        return {"renewed": False, "reason": "disabled"}
+    cert_path, key_path, ca_path = Path(cert_path), Path(key_path), Path(ca_path)
+    days = certificate_days_left(cert_path, openssl=openssl, now=now)
+    if days is None:
+        log("Rinnovo certificato: scadenza non leggibile, salto")
+        return {"renewed": False, "reason": "unknown_expiry"}
+    if days > threshold_days:
+        return {"renewed": False, "reason": "not_due", "days_left": round(days, 1)}
+    log(f"Rinnovo certificato: scade tra {days:.0f} giorni, rinnovo in corso…")
+    try:
+        renew_certificate(
+            cert_path=cert_path, key_path=key_path, ca_path=ca_path, common_name=common_name,
+            portal=renewal.get("portal") or DEFAULT_PORTAL, email=renewal["email"],
+            password=renewal["password"], openssl=openssl, client_factory=client_factory, log=log)
+    except (OnboardingError, OSError, ValueError) as exc:
+        log(f"Rinnovo certificato non riuscito: {type(exc).__name__}")
+        return {"renewed": False, "reason": "error", "days_left": round(days, 1)}
+    new_days = certificate_days_left(cert_path, openssl=openssl, now=now)
+    log("Rinnovo certificato completato")
+    return {"renewed": True, "days_left": round(new_days, 1) if new_days is not None else None}
 
 
 def validate_identifier(value: Any, label: str) -> str:
