@@ -249,6 +249,63 @@ async def test_options_enable_and_disable_certificate_renewal(hass, listener, tm
     await hass.config_entries.async_unload(entry.entry_id)
 
 
+def _make_cert_storage(tmp_path, days_valid):
+    import json
+    from datetime import datetime, timedelta, timezone
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.now(timezone.utc)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "phone")])
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+            .public_key(key.public_key()).serial_number(1)
+            .not_valid_before(now - timedelta(days=1))
+            .not_valid_after(now + timedelta(days=days_valid)).sign(key, hashes.SHA256()))
+    (tmp_path / "client.cert.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (tmp_path / "onboarding.json").write_text(json.dumps({"certificate_file": "client.cert.pem"}))
+
+
+async def _setup_standalone(hass, listener, tmp_path):
+    from unittest.mock import AsyncMock, patch
+    runtime = AsyncMock()
+    runtime.storage = tmp_path
+    runtime.socket = tmp_path / "hometouch.sock"
+    entry = MockConfigEntry(domain=DOMAIN, data={"storage": str(tmp_path), CONF_HOST: "127.0.0.1",
+                                                 CONF_PORT: listener.port, CONF_TOKEN: TOKEN})
+    entry.add_to_hass(hass)
+    with patch("custom_components.bticino_hometouch._start_runtime", return_value=runtime):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    return entry
+
+
+async def test_certificate_expiry_sensor_and_near_expiry_warning(hass, listener, tmp_path):
+    from homeassistant.helpers import entity_registry as er, issue_registry as ir
+    _make_cert_storage(tmp_path, 5)  # expires in 5 days → within the 14-day warning window
+    entry = await _setup_standalone(hass, listener, tmp_path)
+    reg = er.async_get(hass)
+    sensor = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_certificate_expiry")
+    assert sensor is not None
+    state = hass.states.get(sensor)
+    assert state is not None and state.state not in ("unknown", "unavailable")
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"certificate_expiring_{entry.entry_id}")
+    assert issue is not None and issue.translation_placeholders["days"] == "5"
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_no_certificate_warning_when_fresh(hass, listener, tmp_path):
+    from homeassistant.helpers import entity_registry as er, issue_registry as ir
+    _make_cert_storage(tmp_path, 300)  # far from expiry → no warning
+    entry = await _setup_standalone(hass, listener, tmp_path)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"certificate_expiring_{entry.entry_id}") is None
+    reg = er.async_get(hass)
+    sensor = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_certificate_expiry")
+    assert hass.states.get(sensor).state not in ("unknown", "unavailable")
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_second_camera_entity_when_the_system_has_one(hass, listener, tmp_path):
     import json
     from unittest.mock import AsyncMock, patch

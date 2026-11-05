@@ -187,6 +187,12 @@ kept apart from the rest of the configuration and never shown or logged; it is
 included in Home Assistant backups. Turning the option off deletes that
 password. Leaving it off changes nothing: the password from setup is not kept.
 
+A diagnostic sensor **Certificate expiry** shows the date, and a warning in
+*Settings → Repairs* appears when the certificate is within 14 days of expiry —
+the safety net for auto-renewal: if it is off or ever fails, you are told before
+the connection stops. With auto-renewal on, the date moves forward by itself and
+the warning never shows.
+
 ## Updating and removing
 
 - **Update**: HACS shows the update; install it and restart Home Assistant.
