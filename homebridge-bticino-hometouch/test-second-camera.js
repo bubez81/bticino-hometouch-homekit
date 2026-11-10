@@ -11,7 +11,7 @@ ipc.request = async (_socket, command, payload) => { calls.push({command, ...pay
 const {SecondCamera, hasSecondCamera, secondCameraName} = require('./second-camera');
 
 class AccessoryInformation { setCharacteristic() { return this; } }
-class CameraController { constructor(options) { this.options = options; } }
+class CameraController { constructor(options) { this.options = options; } on(event, handler) { (this.handlers ||= {})[event] = handler; } }
 class PlatformAccessory {
   constructor(name, uuid, category) { Object.assign(this, {displayName: name, UUID: uuid, category}); this.info = new AccessoryInformation(); this.controllers = []; }
   getService() { return this.info; }
