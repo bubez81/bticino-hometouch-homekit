@@ -69,24 +69,27 @@ class SecondCamera {
       .setCharacteristic(hap.Characteristic.Model, 'HOMETOUCH Tvcc')
       .setCharacteristic(hap.Characteristic.SerialNumber, 'HOMETOUCH-TVCC-1');
     this.streamManager = new StreamManager(this.socket, this.log, {
-      camera: 1, ffmpegPath: this.ffmpeg, audioFfmpegPath: this.ffmpeg, liveAudio: false,
+      camera: 1, ffmpegPath: this.ffmpeg, audioFfmpegPath: this.ffmpeg, liveAudio: this.config.secondCameraAudio !== false,
     });
-    accessory.configureController(new hap.CameraController({
+    const controller = new hap.CameraController({
       cameraStreamCount: 1,
       delegate: this.delegate(),
       streamingOptions: {
         proxy: false,
         supportedCryptoSuites: [0],
-        // Apple Home treats a camera without a Microphone service as broken (white,
-        // crossed out, never asked for video): declaring an audio codec adds it,
-        // even though this camera sends no sound.
-        audio: {codecs: [{type: 'OPUS', samplerate: [16, 24], audioChannels: 1}], twoWayAudio: false},
+        // This is a second entrance panel (not a silent TVCC): it has its own
+        // sound. The camera-slide reuses the call's audio, so two-way audio works
+        // like the main doorbell. Can be turned off with secondCameraAudio: false.
+        audio: {codecs: [{type: 'OPUS', samplerate: [16, 24], audioChannels: 1}], twoWayAudio: this.config.secondCameraAudio !== false},
         video: {
           codec: {profiles: [0, 1, 2], levels: [0, 1, 2]},
           resolutions: [[1280, 720, 30], [640, 480, 30], [640, 360, 30], [320, 240, 30], [320, 240, 15], [320, 180, 30]],
         },
       },
-    }));
+    });
+    accessory.configureController(controller);
+    if (this.config.secondCameraAudio !== false) controller.on('speaker-change', muted =>
+      this.streamManager.setTalkEnabled(!muted).catch(error => this.log.error(`HomeKit talk (${this.name}): ${error.message}`)));
     // Own HomeKit accessory: added once in Apple Home with the bridge's setup code.
     this.api.publishExternalAccessories(PLUGIN, [accessory]);
     this.api.on('shutdown', () => this.streamManager.closeAll().catch(() => {}));

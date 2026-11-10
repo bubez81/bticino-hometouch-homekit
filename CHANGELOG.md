@@ -7,6 +7,16 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-10
 
+### Added (plugin 0.16.0)
+
+- **Two-way audio on the second camera.** The second camera is a second entrance
+  panel, not a silent surveillance camera, so it has its own sound. Its camera
+  view is reached by a camera-slide that reuses the call's audio, so it now
+  carries two-way audio like the main doorbell: hear it, and talk with the
+  **"Parla"** control. The audio stays with the entrance the call connected to
+  while the view slides, so field-check where your voice comes out. Turn it off
+  with `secondCameraAudio: false` in the plugin config.
+
 ### Changed (plugin 0.15.0)
 
 - **Two-way audio offered at 16 and 24 kHz.** HomeKit requires both OPUS sample
