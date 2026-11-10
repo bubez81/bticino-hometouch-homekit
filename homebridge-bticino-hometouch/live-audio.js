@@ -117,8 +117,11 @@ class LiveAudio {
       '-c:a','libopus','-ar','24000','-ac','1','-b:a','24k','-application','lowdelay','-frame_duration',String(this.packetTime),
       '-payload_type',String(this.pt),'-ssrc',String(this.ssrc),'-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80',
       '-srtp_out_params',params,`srtp://127.0.0.1:${this.homekitPort}?rtcpport=${this.homekitPort}&pkt_size=1200`]);
+    // A long read timeout keeps the talk decoder waiting for microphone RTP
+    // instead of dying after a few silent seconds while Home is muted, so voice
+    // reaches the door the instant Home unmutes (no first words lost).
     this.spawn('talk',['-hide_banner','-loglevel','error','-nostdin','-protocol_whitelist','file,udp,rtp,srtp,crypto',
-      '-probesize','32768','-analyzeduration','0','-i',talkSdp,'-map','0:a:0','-vn',
+      '-probesize','32768','-analyzeduration','0','-rw_timeout','3600000000','-i',talkSdp,'-map','0:a:0','-vn',
       '-c:a','pcm_alaw','-ar','8000','-ac','1','-f','alaw',`udp://127.0.0.1:${this.talkPort}?pkt_size=320`]);
     await Promise.all(this.processes.map(child=>new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);})));
   }
@@ -138,11 +141,17 @@ class LiveAudio {
     child.on('exit',(code,signal)=>{
       this.processes=this.processes.filter(item=>item!==child);
       if(this.stopping)return;
-      // The talk decoder ends after a few silent seconds while Home's microphone
-      // is muted; either direction must be there for the whole live view.
+      if(name==='talk'){
+        // Talk may still end (e.g. a very long muted view); keep it ready with a
+        // quick, uncapped restart — an idle exit is expected, not a failure, so
+        // the mic is never left dead when Home finally unmutes.
+        this.restartTimer=setTimeout(()=>{if(!this.stopping)this.spawn('talk',this.args.talk);},300);
+        return;
+      }
+      // The panel-audio ('listen') decoder must be there for the whole view.
       this.restarts=(this.restarts||0)+1;
       if(this.restarts>60){this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}; no more restarts`);return;}
-      if(name!=='talk'||code!==0)this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}; restarting`);
+      this.log?.warn?.(`BTicino live audio ${name} ended: ${code ?? signal}; restarting`);
       this.restartTimer=setTimeout(()=>{if(!this.stopping)this.spawn(name,this.args[name]);},1000);
     });
     this.processes.push(child);
