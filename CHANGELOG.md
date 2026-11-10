@@ -5,6 +5,21 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-10
+
+### Changed (plugin 0.14.0)
+
+- **Faster on-demand live view.** When the entrance panel ends its video dialog
+  while you are watching, the plugin reopens it keeping the same HomeKit video
+  session. The first reopens are now quick instead of waiting several seconds,
+  and the retry budget resets once the source has held steady, so opening the
+  camera outside a ring shows video sooner and a long view no longer gives up.
+- **Two-way audio ready at once.** The talk decoder now waits for the iPhone
+  microphone instead of ending after a few silent seconds and restarting, so
+  when you unmute, your voice reaches the door immediately (no first words
+  lost). Both improve using the intercom from the camera when you miss the ring
+  notification.
+
 ## 2026-11-05
 
 ### Added (Home Assistant 0.3.12)

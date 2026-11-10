@@ -7,6 +7,14 @@ const ipc = require('./ipc');
 const {IncomingCall}=require('./incoming-call');
 const {LiveAudio,TALK_PORT}=require('./live-audio');
 const {randomSsrc}=require('./two-way-audio');
+// On-demand video: the gateway often ends its dialog right after answering, so
+// the plugin reopens the SIP source while keeping the HomeKit video session.
+// The first reopens are quick (one dropped dialog is the common case); the gap
+// grows only if the gateway keeps dropping at once, and resets once the source
+// has held steady, so a long healthy view never exhausts the budget.
+const REOPEN_BACKOFF_MS = 2000;
+const MAX_REOPEN_ATTEMPTS = 6;
+const SOURCE_STABLE_MS = 20000;
 class StreamManager {
   constructor(socketPath, log, config = {}) {
     Object.assign(this, {socketPath, log, config});
@@ -204,17 +212,27 @@ class StreamManager {
           s.sourceChecking = true;
           try {
             const status = await ipc.request(this.socketPath, 'status', {}, 2000);
-            if (s.state !== 'streaming' || status.state !== 'idle') return;
+            if (s.state !== 'streaming') return;
+            if (status.state !== 'idle') {
+              // The source is alive again: once it has held steady, forget the
+              // earlier reopens so a gateway that ends its dialog periodically
+              // never uses up the retry budget on a long, healthy view.
+              if (s.reopenAttempts && Date.now() - (s.lastReopen || 0) > SOURCE_STABLE_MS) {
+                s.reopenAttempts = 0; s.nextReopen = 0;
+              }
+              return;
+            }
             // Back off: a call that died without BYE leaves the panel busy (486)
             // for a while, and rapid repeated calls stop its video for minutes.
             if (s.nextReopen && Date.now() < s.nextReopen) return;
             s.reopenAttempts = (s.reopenAttempts || 0) + 1;
-            if (s.reopenAttempts > 5) {
-              this.log.error('HomeKit source unavailable after five reopen attempts');
+            if (s.reopenAttempts > MAX_REOPEN_ATTEMPTS) {
+              this.log.error('HomeKit source unavailable after repeated reopen attempts');
               await this.stop(s.id);
               return;
             }
-            s.nextReopen = Date.now() + 5000 * s.reopenAttempts;
+            s.lastReopen = Date.now();
+            s.nextReopen = Date.now() + REOPEN_BACKOFF_MS * s.reopenAttempts;
             this.log.info('HomeKit source ended: reopening SIP while preserving video session');
             s.pending = ipc.request(this.socketPath, 'start_call', {candidate:this.config.candidate||'1',session_id:s.id,video_port:port,...(this.config.camera?{camera:this.config.camera}:{}),
         ...(s.liveAudio ? {audio:true,audio_port:s.liveAudio.panelPort} : {})},5000);
