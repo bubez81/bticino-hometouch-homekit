@@ -84,11 +84,14 @@ class JitterBuffer {
 }
 
 class LiveAudio {
-  constructor({ffmpeg,log,key,salt,pt,ssrc,packetTime,homekitPort,talkPort=TALK_PORT}) {
+  constructor({ffmpeg,log,key,salt,pt,ssrc,packetTime,homekitPort,talkPort=TALK_PORT,sampleRate=24000}) {
     if(!Buffer.isBuffer(key)||key.length!==16||!Buffer.isBuffer(salt)||salt.length!==14)throw Error('Invalid HomeKit audio key');
     for(const n of [pt,ssrc,homekitPort,talkPort])if(!Number.isInteger(n)||n<0)throw Error('Invalid HomeKit audio parameters');
     Object.assign(this,{ffmpeg,log,key,salt,pt,ssrc,homekitPort,talkPort,processes:[]});
     this.packetTime=[20,30,40,60].includes(packetTime)?packetTime:20;
+    // HomeKit negotiates OPUS at 16 or 24 kHz (24 on iPhone, 16 on Apple Watch);
+    // the panel-audio encoder must output the rate HomeKit asked for.
+    this.sampleRate=[16000,24000].includes(sampleRate)?sampleRate:24000;
     this.sender=dgram.createSocket('udp4');
   }
   async start() {
@@ -110,11 +113,11 @@ class LiveAudio {
     this.directory=fs.mkdtempSync(path.join(os.tmpdir(),'bticino-live-audio-'));
     fs.chmodSync(this.directory,0o700);
     const talkSdp=path.join(this.directory,'talk.sdp');
-    fs.writeFileSync(talkSdp,sdp({codec:'OPUS',rate:24000,channels:1,port:this.talkInput,pt:this.pt,key:this.key,salt:this.salt}),{mode:0o600,flag:'wx'});
+    fs.writeFileSync(talkSdp,sdp({codec:'OPUS',rate:this.sampleRate,channels:1,port:this.talkInput,pt:this.pt,key:this.key,salt:this.salt}),{mode:0o600,flag:'wx'});
     const params=Buffer.concat([this.key,this.salt]).toString('base64');
     this.spawn('listen',['-hide_banner','-loglevel','error','-fflags','nobuffer','-flags','low_delay',
       '-f','s16le','-ar','16000','-ac','1','-i','pipe:0',
-      '-c:a','libopus','-ar','24000','-ac','1','-b:a','24k','-application','lowdelay','-frame_duration',String(this.packetTime),
+      '-c:a','libopus','-ar',String(this.sampleRate),'-ac','1','-b:a','24k','-application','lowdelay','-frame_duration',String(this.packetTime),
       '-payload_type',String(this.pt),'-ssrc',String(this.ssrc),'-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80',
       '-srtp_out_params',params,`srtp://127.0.0.1:${this.homekitPort}?rtcpport=${this.homekitPort}&pkt_size=1200`]);
     // A long read timeout keeps the talk decoder waiting for microphone RTP

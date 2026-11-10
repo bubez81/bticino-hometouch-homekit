@@ -265,7 +265,9 @@ class BTicinoAccessory {
         proxy: false,
         supportedCryptoSuites: [0],
         ...(this.config.enableTwoWayAudio === true ? {
-          audio: {codecs:[{type:'OPUS',samplerate:24,audioChannels:1}],twoWayAudio:true},
+          // HAP requires 16 and 24 kHz; offering both keeps the two-way audio
+          // ("Parla") control from coming and going and lets Apple Watch talk.
+          audio: {codecs:[{type:'OPUS',samplerate:[16,24],audioChannels:1}],twoWayAudio:true},
         } : {}),
         video: {
           codec: { profiles: [0, 1, 2], levels: [0, 1, 2] },

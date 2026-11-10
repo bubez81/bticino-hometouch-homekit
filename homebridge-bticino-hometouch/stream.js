@@ -137,18 +137,20 @@ class StreamManager {
       }
       const combinedAudio = !s.incoming && process.env.BTICINO_SYNC_AUDIO === '1' && req.audio && s.req.audio?.srtp_key && s.req.audio?.srtp_salt;
       const diagnostic = !s.incoming && process.env.BTICINO_TEST_PATTERN === '1';
+      // The OPUS sample rate HomeKit negotiated (16 kHz on Apple Watch, else 24).
+      const audioRate = req.audio && req.audio.sample_rate === 16 ? 16000 : 24000;
       if (!s.incoming && !diagnostic && !combinedAudio && this.config.liveAudio !== false && req.audio &&
           s.audioSocket && s.req.audio?.srtp_key && s.req.audio?.srtp_salt) {
         // The gateway sends the panel's audio only on a Speex call that also
         // receives client audio; the camera call handles both, this relays them.
         s.liveAudio = new LiveAudio({ffmpeg:this.config.audioFfmpegPath||this.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg',
           log:this.log, key:s.req.audio.srtp_key, salt:s.req.audio.srtp_salt, pt:req.audio.pt, ssrc:s.audioSsrc,
-          packetTime:req.audio.packet_time, homekitPort:s.audioSocket.address().port, talkPort:this.config.talkPort||TALK_PORT});
+          packetTime:req.audio.packet_time, homekitPort:s.audioSocket.address().port, talkPort:this.config.talkPort||TALK_PORT, sampleRate:audioRate});
         await s.liveAudio.start();
         this.log.info('HomeKit live audio: entrance panel sound, microphone when Home unmutes');
       }
       if (!s.incoming && !combinedAudio && !s.liveAudio && s.audioSocket && s.req.audio?.srtp_key && s.req.audio?.srtp_salt) {
-        s.audioProcess = spawn(this.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg', ['-hide_banner','-loglevel','error','-nostdin','-re','-f','lavfi','-i','anullsrc=r=24000:cl=mono','-c:a','libopus','-ar','24000','-ac','1','-b:a','24k','-application','lowdelay','-payload_type',String(req.audio.pt),'-ssrc',String(s.audioSsrc),'-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80','-srtp_out_params',Buffer.concat([s.req.audio.srtp_key,s.req.audio.srtp_salt]).toString('base64'),`srtp://127.0.0.1:${s.audioSocket.address().port}?rtcpport=${s.audioSocket.address().port}`],{stdio:'ignore'});
+        s.audioProcess = spawn(this.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg', ['-hide_banner','-loglevel','error','-nostdin','-re','-f','lavfi','-i',`anullsrc=r=${audioRate}:cl=mono`,'-c:a','libopus','-ar',String(audioRate),'-ac','1','-b:a','24k','-application','lowdelay','-payload_type',String(req.audio.pt),'-ssrc',String(s.audioSsrc),'-f','rtp','-srtp_out_suite','AES_CM_128_HMAC_SHA1_80','-srtp_out_params',Buffer.concat([s.req.audio.srtp_key,s.req.audio.srtp_salt]).toString('base64'),`srtp://127.0.0.1:${s.audioSocket.address().port}?rtcpport=${s.audioSocket.address().port}`],{stdio:'ignore'});
         s.audioProcess.on('error', error => this.log.error(`HomeKit audio encoder: ${error.message}`));
         this.log.info('HomeKit diagnostic audio: silence only, not doorbell microphone');
       }
@@ -166,8 +168,8 @@ class StreamManager {
       if (combinedAudio) {
         // Both outputs share one encoder clock; the diagnostic audio is silence.
         const outputStart = args.indexOf('-an');
-        args.splice(outputStart, 0, '-re', '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono');
-        args.push('-map', '1:a:0', '-vn', '-c:a', 'libopus', '-ar', '24000', '-ac', '1',
+        args.splice(outputStart, 0, '-re', '-f', 'lavfi', '-i', `anullsrc=r=${audioRate}:cl=mono`);
+        args.push('-map', '1:a:0', '-vn', '-c:a', 'libopus', '-ar', String(audioRate), '-ac', '1',
           '-b:a', '24k', '-application', 'lowdelay', '-frame_duration', String(req.audio.packet_time || 20),
           '-payload_type', String(req.audio.pt), '-ssrc', String(s.audioSsrc), '-f', 'rtp',
           '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80', '-srtp_out_params',
