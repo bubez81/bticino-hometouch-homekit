@@ -7,6 +7,15 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-10
 
+### Changed (plugin 0.15.0)
+
+- **Two-way audio offered at 16 and 24 kHz.** HomeKit requires both OPUS sample
+  rates (24 kHz on iPhone, 16 kHz on Apple Watch); the plugin advertised only
+  24 kHz and the panel-audio pipeline was fixed at 24 kHz, rejecting a 16 kHz
+  negotiation. Both rates are now offered and the audio encoder follows the one
+  HomeKit picks, so the **"Talk" control stops coming and going** and talking
+  from an Apple Watch works. The iPhone keeps 24 kHz.
+
 ### Changed (plugin 0.14.0)
 
 - **Faster on-demand live view.** When the entrance panel ends its video dialog

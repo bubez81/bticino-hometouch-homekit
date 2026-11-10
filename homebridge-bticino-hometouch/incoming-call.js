@@ -30,7 +30,8 @@ class IncomingCall {
   }
   async start() {
     const {manager,session:s,request:req}=this;
-    if(req.audio?.codec!=='OPUS'||req.audio.channel!==1||req.audio.sample_rate!==24)throw Error('Unsupported HomeKit audio');
+    if(req.audio?.codec!=='OPUS'||req.audio.channel!==1||![16,24].includes(req.audio.sample_rate))throw Error('Unsupported HomeKit audio');
+    const sampleRate=req.audio.sample_rate===16?16000:24000;
     try {
       for(let i=0;i<3;i++)this.pairs.push(await pair());
       const [video,door,out]=this.pairs;
@@ -39,7 +40,7 @@ class IncomingCall {
       // and pass the iPhone microphone to the listener's talk port.
       this.audio=new LiveAudio({ffmpeg:manager.config.audioFfmpegPath||manager.config.ffmpegPath||'/opt/homebrew/opt/ffmpeg/bin/ffmpeg',
         log:manager.log,key:s.req.audio.srtp_key,salt:s.req.audio.srtp_salt,pt:req.audio.pt,ssrc:s.audioSsrc,
-        packetTime:req.audio.packet_time,homekitPort:out.port,talkPort:manager.config.talkPort||TALK_PORT});
+        packetTime:req.audio.packet_time,homekitPort:out.port,talkPort:manager.config.talkPort||TALK_PORT,sampleRate});
       await this.audio.start();
       const result=await ipc.request(manager.socketPath,'attach_incoming',{
         session_id:s.id,video_port:video.port,audio_port:door.port,pcm_port:this.audio.panelPort},4000);
