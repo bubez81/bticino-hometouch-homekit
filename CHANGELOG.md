@@ -5,6 +5,16 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-14
+
+### Added (Home Assistant 0.3.13)
+
+- **Optional "Refresh picture" and "Close" buttons on the dashboard card.** Set
+  `show_refresh: true` (or a button entity_id, when the refresh button is not on
+  the camera's device) and `show_close: true` in the card's YAML. *Close* closes
+  the browser_mod popup the card is shown in, so a popup needs no extra row of
+  buttons. Both are off by default.
+
 ## 2026-11-10
 
 ### Added (plugin 0.16.0)

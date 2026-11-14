@@ -167,6 +167,11 @@ is not shown). The dashboard card shows it under the video, with a coloured
 dot; tap it to open *Repairs* when it is unstable. Hide the line with
 `show_connection: false` in the card's YAML.
 
+Two optional buttons, off by default: `show_refresh: true` adds *Refresh
+picture* (give a button entity_id instead of `true` when that button is not on
+the camera's device) and `show_close: true` adds *Close*, which closes the
+browser_mod popup the card is shown in.
+
 An opening asked while the connection is down waits up to 20 seconds for it to
 come back, then for the HOMETOUCH's answer; the button reports an error when
 the gate could not be opened.

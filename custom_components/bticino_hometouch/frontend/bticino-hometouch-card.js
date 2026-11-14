@@ -11,6 +11,7 @@ const TEXT = {
     talking: "Microphone on", https: "The microphone works only when Home Assistant is opened over HTTPS",
     mic: "Microphone not available", confirm: "Open {name}?", error: "Not possible: {error}",
     opening: "Opening {name}…", opened: "{name}: opened",
+    refresh: "Refresh picture", close: "Close",
   },
   it: {
     talk: "Parla", stop: "Smetti di parlare", answer: "Rispondi", hangup: "Riaggancia",
@@ -18,6 +19,7 @@ const TEXT = {
     talking: "Microfono acceso", https: "Il microfono funziona solo aprendo Home Assistant in HTTPS",
     mic: "Microfono non disponibile", confirm: "Aprire {name}?", error: "Non riuscito: {error}",
     opening: "Apertura {name}…", opened: "{name}: aperto",
+    refresh: "Aggiorna foto", close: "Chiudi",
   },
 };
 
@@ -182,6 +184,30 @@ class BticinoHometouchCard extends HTMLElement {
       .map((e) => e.entity_id).sort();
   }
 
+  _refreshButtons() {
+    // show_refresh: true finds the camera device's own button; a button entity_id picks one explicitly.
+    if (typeof this._config.show_refresh === "string") return [this._config.show_refresh];
+    const hass = this._hass;
+    const camera = hass.entities && hass.entities[this._config.entity];
+    if (!camera || !camera.device_id) return [];
+    return Object.values(hass.entities)
+      .filter((e) => e.device_id === camera.device_id && e.entity_id.startsWith("button.")
+        && hass.states[e.entity_id] && hass.states[e.entity_id].attributes.entrance === undefined)
+      .map((e) => e.entity_id).sort();
+  }
+
+  _press(entityId) {
+    this._hass.callService("button", "press", { entity_id: entityId })
+      .catch((err) => this._setStatus(this._t("error", { error: err.message })));
+  }
+
+  _closePopup() {
+    // Same event a fire-dom-event tap action sends; browser_mod handles it.
+    this.dispatchEvent(new CustomEvent("ll-custom", {
+      detail: { browser_mod: { service: "browser_mod.close_popup" } }, bubbles: true, composed: true,
+    }));
+  }
+
   _renderButtons() {
     if (!this._controls || !this._hass) return;
     const items = [];
@@ -206,6 +232,11 @@ class BticinoHometouchCard extends HTMLElement {
       const name = state ? (state.attributes.friendly_name || entityId).replace(/^.*?\s(?=Apri|Open)/, "") : entityId;
       items.push([name, "", () => this._open(entityId, name)]);
     }
+    // Optional extras, off by default: "Refresh picture" and closing the browser_mod popup.
+    if (this._config.show_refresh) {
+      for (const entityId of this._refreshButtons()) items.push([this._t("refresh"), "", () => this._press(entityId)]);
+    }
+    if (this._config.show_close) items.push([this._t("close"), "", () => this._closePopup()]);
     const signature = JSON.stringify(items.map(([label, kind]) => [label, kind]));
     if (signature === this._signature) return;
     this._signature = signature;
