@@ -81,7 +81,7 @@ def write_private_json(path: Path, value) -> None:
 
 
 def listener_config(storage: Path, ffmpeg: Path, entrances: dict[str, str], api_port: int,
-                    gateway: str | None = None) -> dict:
+                    gateway: str | None = None, ringer: dict | None = None) -> dict:
     """onboarding.json with relative private paths resolved, plus our settings."""
     base = json.loads((storage / "onboarding.json").read_text(encoding="utf-8"))
     for key, value in list(base.items()):
@@ -91,7 +91,7 @@ def listener_config(storage: Path, ffmpeg: Path, entrances: dict[str, str], api_
         # The gateway at home answers camera calls directly; the cloud server
         # asks for a password the endpoint cannot provide.
         base["sip_server"] = gateway
-    return {
+    config = {
         **base,
         "base_dir": str(storage),
         "ffmpeg": str(ffmpeg),
@@ -102,14 +102,21 @@ def listener_config(storage: Path, ffmpeg: Path, entrances: dict[str, str], api_
         "api": {"enabled": True, "bind": "127.0.0.1", "port": api_port,
                 "token_file": str(storage / "private" / "api_token"), "allowed_clients": ["127.0.0.1"]},
     }
+    if ringer:
+        config["ringer_enabled"] = bool(ringer.get("enabled"))
+        config["ringer_volume_enabled"] = bool(ringer.get("volume"))
+        if isinstance(ringer.get("volume_codes"), list) and ringer["volume_codes"]:
+            config["ringer_volume_codes"] = ringer["volume_codes"]
+    return config
 
 
 class ListenerRuntime:
     """The listener as a supervised child process of Home Assistant."""
 
     def __init__(self, storage: Path, ffmpeg: Path, entrances: dict[str, str], api_port: int,
-                 python: str = sys.executable, gateway: str | None = None) -> None:
+                 python: str = sys.executable, gateway: str | None = None, ringer: dict | None = None) -> None:
         self.storage, self.ffmpeg, self.entrances, self.api_port, self.python = storage, ffmpeg, entrances, api_port, python
+        self.ringer = ringer
         self.gateway = gateway
         self.socket = storage / "hometouch.sock"
         self.process: asyncio.subprocess.Process | None = None
@@ -145,7 +152,7 @@ class ListenerRuntime:
         while not self.stopping:
             config_file = self.storage / "listener.json"
             config = await loop.run_in_executor(None, listener_config, self.storage, self.ffmpeg,
-                                                self.entrances, self.api_port, self.gateway)
+                                                self.entrances, self.api_port, self.gateway, self.ringer)
             await loop.run_in_executor(None, write_private_json, config_file, config)
             started = loop.time()
             self.process = await asyncio.create_subprocess_exec(

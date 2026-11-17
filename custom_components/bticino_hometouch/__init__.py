@@ -21,14 +21,16 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ApiError, AuthError, HometouchApi
-from .const import CONF_ENTRANCES, CONF_GATEWAY, CONF_STORAGE, DOMAIN
+from .const import (CONF_ENTRANCES, CONF_GATEWAY, CONF_RINGER, CONF_RINGER_VOLUME,
+                    CONF_STORAGE, DOMAIN)
 from .live import LiveSource, LiveView
 from .talk import URL as TALK_URL, TalkView
 from .hub import HometouchHub
 from .runtime import ListenerRuntime, SetupError, ensure_ffmpeg
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.CAMERA,
-             Platform.EVENT, Platform.IMAGE, Platform.SENSOR]
+             Platform.EVENT, Platform.IMAGE, Platform.NUMBER, Platform.SENSOR,
+             Platform.SWITCH]
 
 type HometouchConfigEntry = ConfigEntry[HometouchHub]
 
@@ -52,8 +54,11 @@ async def _start_runtime(hass: HomeAssistant, entry: HometouchConfigEntry) -> Li
         ffmpeg = await hass.async_add_executor_job(ensure_ffmpeg, storage)
     except (SetupError, OSError) as err:
         raise ConfigEntryNotReady(f"FFmpeg: {err}") from err
+    ringer = {"enabled": bool(entry.options.get(CONF_RINGER)),
+              "volume": bool(entry.options.get(CONF_RINGER_VOLUME))}
     runtime = ListenerRuntime(storage, ffmpeg, entrance_ids(entry.options.get(CONF_ENTRANCES, [])),
-                              entry.data[CONF_PORT], gateway=entry.options.get(CONF_GATEWAY) or None)
+                              entry.data[CONF_PORT], gateway=entry.options.get(CONF_GATEWAY) or None,
+                              ringer=ringer)
     await runtime.start()
     return runtime
 

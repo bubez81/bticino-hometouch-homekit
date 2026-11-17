@@ -8,6 +8,8 @@ so the listener keeps running on a plain Python 3.9 installation:
   GET  /api/v1/events                     text/event-stream of events
   GET  /api/v1/snapshot.jpg?width=&height= latest image, optionally scaled
   POST /api/v1/entrances/<name>/open      open an entrance
+  GET  /api/v1/ringer                     ringer/answering-machine state (optimistic)
+  POST /api/v1/ringer/<mute|voicemail|volume>  set a ringer control, body {"value": ...}
 
 Every request needs `Authorization: Bearer <token>`. The token is read from a
 private file and compared in constant time. Optional `allowed_clients` limits
@@ -28,6 +30,7 @@ EVENT_HISTORY = 50
 KEEPALIVE_SECONDS = 15
 MAX_SUBSCRIBERS = 8
 ENTRANCE_PATH = re.compile(r'^/api/v1/entrances/([a-z0-9_-]{1,32})/open$')
+RINGER_PATH = re.compile(r'^/api/v1/ringer/(mute|voicemail|volume)$')
 
 
 def now_iso():
@@ -222,6 +225,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.stream_events()
         elif url.path == '/api/v1/snapshot.jpg':
             self.send_snapshot(parse_qs(url.query))
+        elif url.path == '/api/v1/ringer':
+            try:
+                result = self.server.commands({'command': 'ringer_status'})
+            except Exception as error:
+                result = {'ok': False, 'error': f'listener_unavailable: {type(error).__name__}'}
+            self.send_json(200 if result.get('ok') else 503, result)
         else:
             self.send_json(404, {'ok': False, 'error': 'not_found'})
 
@@ -229,19 +238,38 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not self.authorized():
             return
         length = int(self.headers.get('Content-Length') or 0)
-        if length:
-            self.rfile.read(min(length, 4096))
-        match = ENTRANCE_PATH.match(urlsplit(self.path).path)
-        if not match:
-            self.send_json(404, {'ok': False, 'error': 'not_found'})
+        body = self.rfile.read(min(length, 4096)) if length else b''
+        path = urlsplit(self.path).path
+        entrance = ENTRANCE_PATH.match(path)
+        ringer = RINGER_PATH.match(path)
+        if entrance:
+            try:
+                result = self.server.commands({'command': 'open_entrance', 'entrance': entrance.group(1)})
+            except Exception as error:  # the listener may be reconnecting
+                result = {'ok': False, 'error': f'listener_unavailable: {type(error).__name__}'}
+            status = 200 if result.get('ok') else {'unknown_entrance': 404, 'entrance_busy': 409,
+                                                     'opening_disabled': 403}.get(result.get('error'), 503)
+            self.send_json(status, result)
             return
-        try:
-            result = self.server.commands({'command': 'open_entrance', 'entrance': match.group(1)})
-        except Exception as error:  # the listener may be reconnecting
-            result = {'ok': False, 'error': f'listener_unavailable: {type(error).__name__}'}
-        status = 200 if result.get('ok') else {'unknown_entrance': 404, 'entrance_busy': 409,
-                                                 'opening_disabled': 403}.get(result.get('error'), 503)
-        self.send_json(status, result)
+        if ringer:
+            try:
+                payload = json.loads(body.decode('utf-8')) if body else {}
+            except (UnicodeDecodeError, ValueError):
+                self.send_json(400, {'ok': False, 'error': 'invalid_json'})
+                return
+            if not isinstance(payload, dict) or 'value' not in payload:
+                self.send_json(400, {'ok': False, 'error': 'missing_value'})
+                return
+            try:
+                result = self.server.commands({'command': 'ringer_command',
+                                               'control': ringer.group(1), 'value': payload['value']})
+            except Exception as error:
+                result = {'ok': False, 'error': f'listener_unavailable: {type(error).__name__}'}
+            status = 200 if result.get('ok') else {'ringer_disabled': 403, 'unknown_control': 404,
+                                                     'invalid_value': 400}.get(result.get('error'), 503)
+            self.send_json(status, result)
+            return
+        self.send_json(404, {'ok': False, 'error': 'not_found'})
 
     def send_snapshot(self, query):
         try:

@@ -22,8 +22,8 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ApiError, AuthError, HometouchApi
-from .const import (CONF_ENTRANCES, CONF_GATEWAY, CONF_SECOND_CAMERA, CONF_STORAGE, DEFAULT_SECOND_CAMERA,
-                    DOMAIN, STORAGE_DIR)
+from .const import (CONF_ENTRANCES, CONF_GATEWAY, CONF_RINGER, CONF_RINGER_VOLUME, CONF_SECOND_CAMERA,
+                    CONF_STORAGE, DEFAULT_SECOND_CAMERA, DOMAIN, STORAGE_DIR)
 from .runtime import LISTENER_DIR
 
 CONF_PLANT = "plant"
@@ -220,9 +220,14 @@ class HometouchOptionsFlow(OptionsFlowWithReload):
         current = format_entrances(self.config_entry.options.get(CONF_ENTRANCES, []))
         gateway = self.config_entry.options.get(CONF_GATEWAY, "")
         second_camera = self.config_entry.options.get(CONF_SECOND_CAMERA, DEFAULT_SECOND_CAMERA)
+        ringer = bool(self.config_entry.options.get(CONF_RINGER))
+        ringer_volume = bool(self.config_entry.options.get(CONF_RINGER_VOLUME))
+        standalone = bool(self.config_entry.data.get(CONF_STORAGE))
         if user_input is not None:
             gateway = (user_input.get(CONF_GATEWAY) or "").strip()
             second_camera = (user_input.get(CONF_SECOND_CAMERA) or "").strip()[:64] or DEFAULT_SECOND_CAMERA
+            ringer = bool(user_input.get(CONF_RINGER))
+            ringer_volume = bool(user_input.get(CONF_RINGER_VOLUME))
             try:
                 entrances = parse_entrances(user_input[CONF_ENTRANCES])
             except ValueError:
@@ -231,11 +236,14 @@ class HometouchOptionsFlow(OptionsFlowWithReload):
                 errors[CONF_GATEWAY] = "invalid_gateway"
             if not errors:
                 return self.async_create_entry(data={CONF_ENTRANCES: entrances, CONF_GATEWAY: gateway,
-                                                     CONF_SECOND_CAMERA: second_camera})
+                                                     CONF_SECOND_CAMERA: second_camera,
+                                                     CONF_RINGER: ringer, CONF_RINGER_VOLUME: ringer_volume})
         schema = {vol.Optional(CONF_ENTRANCES, default=current): str}
-        if self.config_entry.data.get(CONF_STORAGE):
+        if standalone:
             schema[vol.Optional(CONF_GATEWAY, description={"suggested_value": gateway})] = str
             schema[vol.Optional(CONF_SECOND_CAMERA, default=second_camera)] = str
+            schema[vol.Optional(CONF_RINGER, default=ringer)] = bool
+            schema[vol.Optional(CONF_RINGER_VOLUME, default=ringer_volume)] = bool
         return self.async_show_form(step_id="entrances", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_renewal(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

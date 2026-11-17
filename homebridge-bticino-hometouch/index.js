@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { ListenerSupervisor } = require('./supervisor');
 const { addEntranceLocks, normalizeEntrances } = require('./entrance-locks');
+const { addRingerControls } = require('./ringer-controls');
 const { addConnectionSensor } = require('./connection-sensor');
 const { PluginLog, teeLogger } = require('./plugin-log');
 const { SecondCamera } = require('./second-camera');
@@ -49,17 +50,21 @@ class BTicinoPlatform {
     log.info(`BTicino HOMETOUCH ${require('./package.json').version} avviato`);
     const ffmpeg = this.config.ffmpegPath || bundledFfmpeg() || 'ffmpeg';
     const entrances = normalizeEntrances(this.config.entrances);
+    const ringer = {enabled: this.config.ringerControls === true,
+      volume: this.config.ringerVolume === true,
+      volumeCodes: Array.isArray(this.config.ringerVolumeCodes) ? this.config.ringerVolumeCodes : undefined};
     // The settings page creates storage/python (with pyzipper); otherwise the system python3.
     const venv = path.join(storage, 'python', 'bin', 'python3');
     const python = this.config.pythonPath || (fs.existsSync(venv) ? venv : 'python3');
     this.supervisor = new ListenerSupervisor({storage, python, ffmpeg, socket: this.config.ipcSocket,
-      settings: {entrances, api: this.homeAssistantApi(storage)}, log});
+      settings: {entrances, api: this.homeAssistantApi(storage), ringer}, log});
     if (!this.supervisor.start()) return;
     this.doorbell = new BTicinoAccessory(log, {
       name: this.config.name || 'Videocitofono', ipcSocket: this.supervisor.socket,
       enableCamera: true, enableHapLive: true, enableTwoWayAudio: true, standalone: true,
       ffmpegPath: ffmpeg, audioFfmpegPath: ffmpeg, liveAudio: this.config.liveAudio !== false,
       entrances, serialNumber: this.config.serialNumber, connectionSensor: this.config.connectionSensor !== false,
+      ringer: ringer.enabled ? {mute: true, voicemail: true, volume: ringer.volume} : null,
     }, api);
     // A second camera of the entrance panel (Tvcc), inside the bridge.
     this.cachedAccessories = this.cachedAccessories || new Map();
@@ -177,6 +182,9 @@ class BTicinoAccessory {
         this.config.ipcSocket || '/tmp/bticino-hometouch.sock', this.log);
     if (this.config.connectionSensor === true)
       this.connectionSensor = addConnectionSensor(this.api, accessory,
+        this.config.ipcSocket || '/tmp/bticino-hometouch.sock', this.log);
+    if (this.config.ringer)
+      this.ringerServices = addRingerControls(this.api, accessory, this.config.ringer,
         this.config.ipcSocket || '/tmp/bticino-hometouch.sock', this.log);
     this.externalAccessory = accessory;
     this.api.on('didFinishLaunching', () => {

@@ -107,6 +107,19 @@
       "certificate_expiry": {
         "name": "Certificate expiry"
       }
+    },
+    "switch": {
+      "ringer_mute": {
+        "name": "Ringer muted"
+      },
+      "ringer_voicemail": {
+        "name": "Answering machine"
+      }
+    },
+    "number": {
+      "ringer_volume": {
+        "name": "Ringer volume"
+      }
     }
   },
   "options": {
@@ -124,7 +137,9 @@
         "data": {
           "entrances": "Entrances",
           "gateway": "Gateway address (local network)",
-          "second_camera_name": "Name of the second camera"
+          "second_camera_name": "Name of the second camera",
+          "ringer_controls": "Ringer controls (mute, answering machine)",
+          "ringer_volume": "Ringer volume control (experimental)"
         },
         "data_description": {
           "gateway": "Address of the HOMETOUCH gateway at home, e.g. 192.168.1.50; the live video needs it, because the cloud server refuses camera calls. Empty: found automatically at the next ring.",
