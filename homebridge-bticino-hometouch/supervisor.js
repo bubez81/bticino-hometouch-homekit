@@ -63,6 +63,12 @@ class ListenerSupervisor {
       entrances,
     };
     if (this.settings.api) config.api = this.settings.api;
+    if (this.settings.ringer) {
+      config.ringer_enabled = this.settings.ringer.enabled === true;
+      config.ringer_volume_enabled = this.settings.ringer.volume === true;
+      if (Array.isArray(this.settings.ringer.volumeCodes) && this.settings.ringer.volumeCodes.length)
+        config.ringer_volume_codes = this.settings.ringer.volumeCodes;
+    }
     return config;
   }
 

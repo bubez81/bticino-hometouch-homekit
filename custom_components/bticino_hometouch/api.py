@@ -75,6 +75,21 @@ class HometouchApi:
         # The listener waits up to 20 s for a reconnection of the HOMETOUCH, then for its answer.
         return await self._json("POST", f"/entrances/{entrance}/open", timeout=35)
 
+    async def ringer_status(self) -> dict[str, Any]:
+        return await self._json("GET", "/ringer")
+
+    async def set_ringer(self, control: str, value: Any) -> dict[str, Any]:
+        response = await self._request("POST", f"/ringer/{control}", timeout=10, json={"value": value})
+        try:
+            payload = await response.json(content_type=None)
+        except (aiohttp.ClientError, ValueError) as err:
+            raise ApiError(f"invalid response: {err}") from err
+        finally:
+            response.release()
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            raise ApiError(str(payload.get("error") if isinstance(payload, dict) else "ringer_failed"))
+        return payload
+
     async def snapshot(self, width: int | None = None, height: int | None = None) -> bytes | None:
         query = f"?width={width}&height={height}" if width and height else ""
         response = await self._request("GET", f"/snapshot.jpg{query}")

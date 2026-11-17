@@ -107,6 +107,19 @@
       "certificate_expiry": {
         "name": "Scadenza certificato"
       }
+    },
+    "switch": {
+      "ringer_mute": {
+        "name": "Suoneria muta"
+      },
+      "ringer_voicemail": {
+        "name": "Segreteria"
+      }
+    },
+    "number": {
+      "ringer_volume": {
+        "name": "Volume suoneria"
+      }
     }
   },
   "options": {
@@ -124,7 +137,9 @@
         "data": {
           "entrances": "Ingressi",
           "gateway": "Indirizzo del gateway (rete locale)",
-          "second_camera_name": "Nome della seconda telecamera"
+          "second_camera_name": "Nome della seconda telecamera",
+          "ringer_controls": "Controlli suoneria (muto, segreteria)",
+          "ringer_volume": "Controllo volume suoneria (sperimentale)"
         },
         "data_description": {
           "gateway": "Indirizzo del gateway HOMETOUCH di casa, ad esempio 192.168.1.50; serve per il live, perché il server cloud rifiuta le chiamate alla telecamera. Vuoto: trovato in automatico alla prossima suonata.",

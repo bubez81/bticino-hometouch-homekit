@@ -56,6 +56,28 @@
         "default": true,
         "description": "A contact sensor that opens when the HOMETOUCH keeps dropping the connection or cannot be reached (rings and entrance opening may then not work until it is restarted). Turn on its notifications in Apple Home."
       },
+      "ringerControls": {
+        "title": "Ringer controls (mute and answering machine)",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds a 'Suoneria muta' switch and a 'Segreteria' switch to the doorbell. They send commands to the HOMETOUCH; the shown state is optimistic (not read back from the device), so a change made on the panel itself is not reflected."
+      },
+      "ringerVolume": {
+        "title": "Add ringer volume control (experimental)",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds a 'Volume suoneria' dimmer. Experimental: the volume mapping is not read back and may need tuning with 'Ringer volume codes'."
+      },
+      "ringerVolumeCodes": {
+        "title": "Ringer volume codes (advanced, experimental)",
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999
+        },
+        "description": "OpenWebNet volume codes from lowest to highest; the dimmer 0–100% maps across them. Leave empty for the default 0..7 ladder."
+      },
       "homeAssistant": {
         "title": "Home Assistant",
         "type": "object",
@@ -119,6 +141,8 @@
     "secondCamera",
     "secondCameraName",
     "connectionSensor",
+    "ringerControls",
+    "ringerVolume",
     {
       "type": "fieldset",
       "title": "Home Assistant",
@@ -135,6 +159,7 @@
       "title": "Advanced",
       "expandable": true,
       "items": [
+        "ringerVolumeCodes",
         "pythonPath",
         "ffmpegPath",
         "storagePath",

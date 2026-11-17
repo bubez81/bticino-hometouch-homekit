@@ -9,6 +9,8 @@ CONF_ENTRANCES = "entrances"
 CONF_GATEWAY = "gateway"
 CONF_SECOND_CAMERA = "second_camera_name"
 DEFAULT_SECOND_CAMERA = "Esterno"
+CONF_RINGER = "ringer_controls"
+CONF_RINGER_VOLUME = "ringer_volume"
 MANUFACTURER = "BTicino"
 MODEL = "HOMETOUCH (via listener)"
 

@@ -54,7 +54,7 @@ def open_camera_log(header):
 def handle_request(request: dict) -> dict:
     global _call_process, _last_event, _media_info, _call_owner
     command = request.get("command")
-    if command == 'open_entrance' and _open_entrance is not None:
+    if command in ('open_entrance', 'ringer_command', 'ringer_status') and _open_entrance is not None:
         return _open_entrance(request)
     if command in ('attach_incoming', 'answer_incoming', 'release_incoming', 'open_incoming',
                    'open_entrance', 'entrance_status'):

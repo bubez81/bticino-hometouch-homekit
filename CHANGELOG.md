@@ -5,6 +5,25 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-17
+
+### Added (plugin 0.17.0, Home Assistant 0.3.14)
+
+- **Ringer controls: mute, answering machine and (experimental) volume.** The
+  listener now sends OpenWebNet ringer commands to the gateway inside a SIP
+  MESSAGE, the same channel entrance opening already uses. In Apple Home the
+  doorbell gains a *Suoneria muta* switch and a *Segreteria* switch (and, when
+  enabled, a *Volume suoneria* dimmer); in Home Assistant they appear as switches
+  and a number. Turn them on with `ringerControls` / `ringerVolume` in the plugin
+  settings, or the matching options in a standalone Home Assistant entry.
+  *These are optimistic/write-only:* the gateway confirms delivery but never
+  reports the stored value, so the shown state is the last value set and can
+  drift if the setting is changed on the HOMETOUCH panel itself. The volume
+  mapping (`ringer_volume_codes`) is install-specific and may need tuning. No
+  read-back and no device diagnostics are available over this path. *(Verified:
+  a dimension read over SIP MESSAGE is accepted but returns no value; write
+  commands are delivered with a 200.)*
+
 ## 2026-11-14
 
 ### Added (Home Assistant 0.3.13)
