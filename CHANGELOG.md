@@ -24,6 +24,11 @@ Home Assistant integration is installed from this repository through HACS.
   a dimension read over SIP MESSAGE is accepted but returns no value; write
   commands are delivered with a 200.)*
 
+### Fixed (plugin 0.17.1)
+
+- **0.17.0 failed to load** (`Cannot find module './ringer-controls'`): the new
+  file was missing from the npm package's `files` allowlist. 0.17.1 ships it.
+
 ## 2026-11-14
 
 ### Added (Home Assistant 0.3.13)
