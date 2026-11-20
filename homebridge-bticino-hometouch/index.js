@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const { ListenerSupervisor } = require('./supervisor');
 const { addEntranceLocks, normalizeEntrances } = require('./entrance-locks');
 const { addRingerControls } = require('./ringer-controls');
+const { RecordingDelegate, recordingOptions } = require('./recording-delegate');
 const { addConnectionSensor } = require('./connection-sensor');
 const { PluginLog, teeLogger } = require('./plugin-log');
 const { SecondCamera } = require('./second-camera');
@@ -65,6 +66,7 @@ class BTicinoPlatform {
       ffmpegPath: ffmpeg, audioFfmpegPath: ffmpeg, liveAudio: this.config.liveAudio !== false,
       entrances, serialNumber: this.config.serialNumber, connectionSensor: this.config.connectionSensor !== false,
       ringer: ringer.enabled ? {mute: true, voicemail: true, volume: ringer.volume} : null,
+      hksvRecording: this.config.hksvRecording === true,
     }, api);
     // A second camera of the entrance panel (Tvcc), inside the bridge.
     this.cachedAccessories = this.cachedAccessories || new Map();
@@ -158,7 +160,7 @@ class BTicinoAccessory {
     // standalone: publish the doorbell as its own HAP accessory with the Video Doorbell
     // category (18), like a native HomeKit video doorbell, instead of inside the bridge.
     if (this.config.standalone === true) this.publishStandalone(name);
-    this.api.on('shutdown', () => { if (this.timer) clearInterval(this.timer); clearTimeout(this.retry); this.streamManager.closeAll().catch(err => this.log.error(err.message)); });
+    this.api.on('shutdown', () => { if (this.timer) clearInterval(this.timer); clearTimeout(this.retry); clearTimeout(this.motionTimer); this.recordingDelegate?.closeAll(); this.streamManager.closeAll().catch(err => this.log.error(err.message)); });
     this.didFinishLaunching();
   }
 
@@ -264,11 +266,27 @@ class BTicinoAccessory {
       };
       delegate.handleStreamRequest = (req, callback) => this.streamManager.handle(req).then(() => callback(), err => { this.log.error(`HomeKit stream: ${err.message}`); callback(err); });
     }
+    // HomeKit Secure Video: record a clip on the ring. The doorbell button cannot
+    // trigger an HKSV clip (Apple limitation), so a MotionSensor drives it; the
+    // clip reads the ring's local MPEG-TS feed (no extra gateway call).
+    const hap = this.api.hap;
+    const hksv = this.config.hksvRecording === true && hap.MediaContainerType && hap.CameraRecordingConfiguration;
+    if (this.config.hksvRecording === true && !hksv)
+      this.log.warn('HKSV richiesto ma questa versione di HAP non supporta la registrazione; ignorato');
+    let recordingExtras = {};
+    if (hksv) {
+      this.recordingDelegate = new RecordingDelegate({ffmpeg: this.config.ffmpegPath, log: this.log});
+      recordingExtras = {
+        recording: {options: recordingOptions(hap), delegate: this.recordingDelegate},
+        sensors: {motion: true},
+      };
+    }
     const Controller = this.config.cameraOnly ? this.api.hap.CameraController : this.api.hap.DoorbellController;
     const controller = new Controller({
       name,
       externalDoorbellService: this.doorbellService,
       cameraStreamCount: 1,
+      ...recordingExtras,
       streamingOptions: {
         proxy: false,
         supportedCryptoSuites: [0],
@@ -289,6 +307,11 @@ class BTicinoAccessory {
     if(this.config.enableTwoWayAudio===true)controller.on('speaker-change',(muted)=>{
       this.streamManager.setTalkEnabled(!muted).catch(error=>this.log.error(`HomeKit talk: ${error.message}`));
     });
+    if (hksv) {
+      // configureController (in publishStandalone) builds the motion service.
+      this.recordingController = controller;
+      this.log.info('HKSV: registrazione su suonata attiva (sensore movimento + clip)');
+    }
     this.controllers.push(controller);
     this.log.info(`BTicino HOMETOUCH camera service published: ${name}`);
   }
@@ -310,9 +333,26 @@ class BTicinoAccessory {
             this.log.info(`HomeKit ring dispatch: subscribers=${characteristic.subscriptions}`);
             characteristic.sendEventNotification(event);
             this.log.info('HomeKit ring dispatched (phone delivery unconfirmed)');
+            this.triggerMotion();
           }
         }
       }).catch(() => {});
     }, 1000);
+  }
+
+  // HKSV needs a MotionSensor to produce a clip; the doorbell button alone does
+  // not (Apple limitation). On a ring, trip motion for ~20 s so the home hub pulls
+  // a recording, then clear it. No-op unless HKSV is configured.
+  triggerMotion() {
+    const service = this.recordingController?.motionService;
+    if (!service) return;
+    const {Characteristic} = this.api.hap;
+    service.updateCharacteristic(Characteristic.MotionDetected, true);
+    clearTimeout(this.motionTimer);
+    this.motionTimer = setTimeout(() => {
+      service.updateCharacteristic(Characteristic.MotionDetected, false);
+    }, 20000);
+    this.motionTimer.unref?.();
+    this.log.info('HKSV: sensore movimento attivato dalla suonata');
   }
 }

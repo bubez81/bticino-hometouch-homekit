@@ -56,6 +56,12 @@
         "default": true,
         "description": "A contact sensor that opens when the HOMETOUCH keeps dropping the connection or cannot be reached (rings and entrance opening may then not work until it is restarted). Turn on its notifications in Apple Home."
       },
+      "hksvRecording": {
+        "title": "Record a clip on ring (HomeKit Secure Video)",
+        "type": "boolean",
+        "default": false,
+        "description": "Records a short clip of the entrance each time someone rings, saved to iCloud and visible in Apple Home even if the ring notification is missed. Requires an iCloud+ plan and a home hub (HomePod/Apple TV), with the camera set to 'Stream & Allow Recording'. The clip has no audio and covers only the ring (no continuous recording)."
+      },
       "ringerControls": {
         "title": "Ringer controls (mute and answering machine)",
         "type": "boolean",
@@ -141,6 +147,7 @@
     "secondCamera",
     "secondCameraName",
     "connectionSensor",
+    "hksvRecording",
     "ringerControls",
     "ringerVolume",
     {

@@ -5,6 +5,32 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-20
+
+### Added (plugin 0.18.0)
+
+- **Record a clip on ring (HomeKit Secure Video).** With an iCloud+ plan and a
+  home hub, the doorbell can save a short clip of each ring to iCloud, kept in
+  Apple Home's camera history even when the ring notification is missed. Turn it
+  on with *Record a clip on ring* (`hksvRecording`) in the plugin settings, and
+  set the camera to *Stream & Allow Recording* in Apple Home. The clip starts at
+  the ring (no pre-roll), has no audio, and covers only the ring — there is no
+  continuous recording. *Design:* HomeKit Secure Video cannot be triggered by
+  the doorbell button itself (an Apple limitation), so the clip is driven by a
+  motion sensor the plugin trips on the ring; the video is read from the ring's
+  existing local decrypted feed, so it needs **no second call to the gateway**
+  and does not contend with live view. *(Not yet validated on-device with an
+  iCloud+ account; the sibling project `slyoldfox/c300x-controller` uses the
+  same approach.)*
+
+### Changed (plugin 0.18.0, Home Assistant 0.3.15)
+
+- **Removed the dead HTTP doorbell push.** On every ring the listener tried, and
+  always failed, to POST to a Homebridge HTTP endpoint that does not exist
+  (logging a harmless `HOMEKIT DOORBELL: invio fallito`). The working ring path
+  has long been the IPC poll; the dead call and its unused port constant are
+  gone. No behavior change beyond the misleading log line disappearing.
+
 ## 2026-11-17
 
 ### Added (plugin 0.17.0, Home Assistant 0.3.14)
