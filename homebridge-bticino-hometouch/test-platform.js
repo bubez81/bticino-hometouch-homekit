@@ -23,7 +23,15 @@ class Service {
   setPrimaryService() {}
 }
 class Doorbell extends Service {} class AccessoryInformation extends Service {} class LockMechanism extends Service {} class ContactSensor extends Service {}
-class DoorbellController { constructor(options) { this.options = options; } on() {} setSpeakerMuted() {} }
+class MotionSensor extends Service {}
+class DoorbellController {
+  constructor(options) {
+    this.options = options;
+    // Real HAP builds a MotionSensor when sensors.motion is requested.
+    if (options.sensors && options.sensors.motion) this.motionService = new MotionSensor('Motion');
+  }
+  on() {} setSpeakerMuted() {}
+}
 class PlatformAccessory {
   constructor(name, uuid, category) { Object.assign(this, {displayName: name, UUID: uuid, category}); this.services = [new AccessoryInformation()]; this.controllers = []; }
   getService(type) { return this.services.find(s => s instanceof type); }
@@ -32,8 +40,12 @@ class PlatformAccessory {
   configureController(controller) { this.controllers.push(controller); }
 }
 const Characteristic = {Manufacturer: 'm', Model: 'mo', SerialNumber: 's', Name: 'name', ProgrammableSwitchEvent: {SINGLE_PRESS: 0},
-  LockCurrentState: {SECURED: 1, UNSECURED: 0}, LockTargetState: 'target',
+  LockCurrentState: {SECURED: 1, UNSECURED: 0}, LockTargetState: 'target', MotionDetected: 'motion',
   ContactSensorState: {CONTACT_DETECTED: 0, CONTACT_NOT_DETECTED: 1}, StatusFault: {NO_FAULT: 0, GENERAL_FAULT: 1}};
+// HKSV recording enums: their presence is how index.js detects HAP support.
+const recordingEnums = {MediaContainerType: {FRAGMENTED_MP4: 0}, CameraRecordingConfiguration: class {},
+  VideoCodecType: {H264: 0}, H264Profile: {BASELINE: 0, MAIN: 1, HIGH: 2}, H264Level: {LEVEL3_1: 0, LEVEL3_2: 1, LEVEL4_0: 2},
+  AudioRecordingCodecType: {AAC_LC: 0}, AudioRecordingSamplerate: {KHZ_32: 3}, AudioBitrate: {VARIABLE: 0}};
 const platforms = {}, handlers = {}, published = [];
 const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bticino-platform-test-'));
 const api = {
@@ -43,7 +55,7 @@ const api = {
   publishExternalAccessories(plugin, accessories) { published.push({plugin, accessories}); },
   user: {storagePath: () => storageRoot},
   hap: {Service: {Doorbell, AccessoryInformation, LockMechanism, ContactSensor}, Characteristic, DoorbellController,
-    Categories: {VIDEO_DOORBELL: 18}, uuid: {generate: value => `uuid:${value}`}},
+    Categories: {VIDEO_DOORBELL: 18}, uuid: {generate: value => `uuid:${value}`}, ...recordingEnums},
 };
 const lines = [];
 const log = {info: m => lines.push(m), warn: m => lines.push(m), error: m => lines.push(m), debug() {}};
@@ -66,6 +78,7 @@ require('./index')(api);
     credentials_file: 'private/sip/credentials.json'}));
   const platform = new platforms.BTicinoHometouch(log, {name: 'Videocitofono', pythonPath: fake, ffmpegPath: '/opt/ffmpeg',
     entrances: [{name: 'Scala', address: '20'}, {name: 'Cancello Esterno', address: 21}, {name: 'bad', address: 'x'}],
+    hksvRecording: true,
     homeAssistant: {enabled: true, port: 8790}, ipcSocket: path.join(storageRoot, 'shared.sock')}, api);
 
   const config = JSON.parse(fs.readFileSync(path.join(storage, 'listener.json'), 'utf8'));
@@ -103,6 +116,18 @@ require('./index')(api);
   const sensors = accessory.services.filter(s => s instanceof ContactSensor);
   assert.deepEqual(sensors.map(s => s.subtype), ['connection']);
   assert.equal(sensors[0].values[Characteristic.ContactSensorState], Characteristic.ContactSensorState.CONTACT_DETECTED);
+
+  // HKSV: the doorbell controller carries recording options and a motion sensor,
+  // and a ring trips the motion sensor so the home hub pulls a clip.
+  const doorbellController = platform.doorbell.controllers[0];
+  assert(doorbellController.options.recording, 'recording options passed to the controller');
+  assert.equal(doorbellController.options.recording.options.mediaContainerConfiguration.type,
+    recordingEnums.MediaContainerType.FRAGMENTED_MP4);
+  assert(doorbellController.options.sensors.motion, 'motion sensor requested');
+  assert(platform.doorbell.recordingDelegate, 'recording delegate created');
+  const motion = doorbellController.motionService;
+  platform.doorbell.triggerMotion();
+  assert.equal(motion.values[Characteristic.MotionDetected], true, 'ring trips motion');
 
   // Opening: the right entrance through IPC, shown unlocked, then locked again.
   await locks[1].handlers.target(Characteristic.LockCurrentState.UNSECURED);

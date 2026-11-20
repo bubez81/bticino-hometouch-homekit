@@ -17,6 +17,8 @@ BTicino HOMETOUCH video door entry in Apple Home, with one plugin:
   ring from the notification and talk to the door;
 - **one lock per entrance** inside the doorbell, so the ring notification
   offers the gates;
+- optional **HomeKit Secure Video**: a clip of each ring, saved to iCloud and
+  kept in Apple Home even when the ring notification is missed;
 - optional connection for the Home Assistant integration in the same
   repository.
 
@@ -65,6 +67,14 @@ show them as separate tiles: accessory settings → **Show as Separate Tiles**.
   the command: if the connection is down at that moment, the opening waits up
   to 20 seconds for it to come back. An opening that fails shows the lock as
   **jammed** for a minute, so you know the gate did not open.
+- **Record on ring (HomeKit Secure Video, optional):** turn on *Record a clip on
+  ring* in the plugin settings to save a short clip of each ring to iCloud, kept
+  in Apple Home's camera history even if the ring notification is missed. It
+  needs an **iCloud+** plan and a **home hub** (HomePod or Apple TV), and the
+  camera set to *Stream & Allow Recording* in the accessory's settings. The clip
+  has no audio and covers only the ring (there is no continuous recording), and,
+  like every HomeKit camera, is triggered through a motion sensor the plugin
+  trips on the ring.
 - **Home Assistant:** use the `bticino_hometouch` integration from HACS on its
   own; it does not need this plugin (see the
   [Home Assistant guide](https://github.com/bubez81/bticino-hometouch-homekit/blob/main/docs/home-assistant.md)).

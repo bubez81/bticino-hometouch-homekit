@@ -24,8 +24,6 @@ import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote
-from urllib.request import urlopen
 from bticino_incoming_dialog import IncomingDialog
 from bticino_audio_offer import parse_audio_offer
 from bticino_homekit_call import CallCommands, MediaAttachment
@@ -162,8 +160,6 @@ LIVE_VIDEO_HOST = "127.0.0.1"
 LIVE_VIDEO_PORT = 22300
 SNAPSHOT_HTTP_HOST = "127.0.0.1"
 SNAPSHOT_HTTP_PORT = 8766
-HOMEBRIDGE_HTTP_PORT = 8767
-HOMEBRIDGE_DOORBELL_NAME = CONFIG.get("homekit_doorbell_name", "Videocitofono")
 PLACEHOLDER_SNAPSHOT = RUNTIME_DIR / "snapshot-pending.jpg"
 SAVE_RAW_SIP = bool(CONFIG.get("save_raw_sip", False))
 POST_CALL_FALLBACK_SECONDS = int(CONFIG.get("post_call_fallback_seconds", -1))
@@ -625,19 +621,6 @@ def start_snapshot_server():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log(f"Snapshot HTTP locale: http://{SNAPSHOT_HTTP_HOST}:{SNAPSHOT_HTTP_PORT}/snapshot.jpg")
     return server
-
-
-def ring_homekit_doorbell():
-    url = (
-        f"http://localhost:{HOMEBRIDGE_HTTP_PORT}/doorbell?"
-        f"{quote(HOMEBRIDGE_DOORBELL_NAME)}"
-    )
-    try:
-        with urlopen(url, timeout=3) as response:
-            response.read(2048)
-        log("HOMEKIT DOORBELL: evento inviato")
-    except Exception as exc:
-        log(f"HOMEKIT DOORBELL: invio fallito: {type(exc).__name__}: {exc}")
 
 
 def md5(text):
@@ -1877,9 +1860,6 @@ class HomtouchListener:
             f"H264 PT={payload} crypto-tag={crypto_tag} "
             f"audio={audio['local_port'] if audio else 'rifiutato'}"
         )
-        # HomeKit deve notificare subito; la snapshot pulita continua a essere
-        # generata in parallelo e sostituisce automaticamente quella precedente.
-        threading.Thread(target=ring_homekit_doorbell, daemon=True).start()
 
 
     def maintain_media(self):
