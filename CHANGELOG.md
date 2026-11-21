@@ -5,6 +5,19 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-21
+
+### Fixed (plugin 0.18.1)
+
+- **Entrance lock tile could stay stuck on "unlocked".** Opening is a momentary
+  pulse: the lock shows "unlocked" for a few seconds and then returns to
+  "locked". The relock was pushed only as an event notification, so if Apple
+  Home missed that event the tile stayed "unlocked" indefinitely even though the
+  gate had already closed. The locks now answer reads (`onGet`) with their real
+  state, so reopening the Home app re-reads the truth and a missed event
+  self-heals. No change to the physical opening, which was already a correct
+  one-second pulse.
+
 ## 2026-11-20
 
 ### Added (plugin 0.18.0)

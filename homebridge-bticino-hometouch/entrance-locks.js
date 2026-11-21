@@ -46,10 +46,17 @@ function addEntranceLocks(api, accessory, entrances, socket, log, {ipc = request
       service.setCharacteristic(Characteristic.ConfiguredName, entrance.name);
     }
     let pending = false, jammed = null;
+    // Track the real state so a read always returns it. Apple Home keeps a cached
+    // value and relies on event notifications; if it misses the relock event (it
+    // can), the tile stays stuck "unlocked" forever. Exposing onGet lets Home
+    // re-read the truth whenever it reopens, so a missed event self-heals.
+    let currentState = SECURED, targetState = SECURED;
     const show = (current, target = current === UNSECURED ? UNSECURED : SECURED) => {
+      currentState = current; targetState = target;
       service.updateCharacteristic(Characteristic.LockTargetState, target);
       service.updateCharacteristic(Characteristic.LockCurrentState, current);
     };
+    service.getCharacteristic(Characteristic.LockCurrentState).onGet(() => currentState);
     show(SECURED);
     const open = async () => {
       let result;
@@ -66,7 +73,7 @@ function addEntranceLocks(api, accessory, entrances, socket, log, {ipc = request
         jammed = setTimer(() => { jammed = null; if (!pending) show(SECURED); }, JAMMED_SECONDS * 1000);
       }
     };
-    service.getCharacteristic(Characteristic.LockTargetState).onSet(value => {
+    service.getCharacteristic(Characteristic.LockTargetState).onGet(() => targetState).onSet(value => {
       if (value !== UNSECURED) { if (!pending && !jammed) show(SECURED); return; }
       if (pending) return;
       pending = true;
