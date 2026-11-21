@@ -54,7 +54,10 @@ function recordingOptions(hap) {
       codecs: [{
         type: hap.AudioRecordingCodecType.AAC_LC,
         audioChannels: 1,
-        samplerates: [hap.AudioRecordingSamplerate.KHZ_32],
+        // HAP's AudioRecordingCodec field is `samplerate` (singular; it accepts
+        // an array). Using `samplerates` left it undefined and crashed HAP's
+        // TLV encoder at controller construction.
+        samplerate: [hap.AudioRecordingSamplerate.KHZ_32],
         bitrateMode: hap.AudioBitrate ? hap.AudioBitrate.VARIABLE : 0,
       }],
     },
