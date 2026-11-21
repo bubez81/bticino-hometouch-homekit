@@ -36,6 +36,10 @@ const hap = {
   assert.equal(opts.mediaContainerConfiguration.type, hap.MediaContainerType.FRAGMENTED_MP4);
   assert.equal(opts.video.type, hap.VideoCodecType.H264);
   assert.equal(opts.audio.codecs[0].type, hap.AudioRecordingCodecType.AAC_LC);
+  // HAP reads `codec.samplerate` (singular); a wrong name crashes its TLV encoder.
+  const sr = opts.audio.codecs[0].samplerate;
+  assert(Array.isArray(sr) && sr.length > 0 && sr.every(v => v !== undefined), 'audio codec samplerate is a non-empty, defined array');
+  assert.equal(opts.audio.codecs[0].samplerates, undefined, 'must not use the (wrong) plural key');
   assert.equal(opts.prebufferLength, 4000);
   assert(opts.video.resolutions.length > 0);
 
