@@ -270,7 +270,10 @@ class BTicinoAccessory {
     // trigger an HKSV clip (Apple limitation), so a MotionSensor drives it; the
     // clip reads the ring's local MPEG-TS feed (no extra gateway call).
     const hap = this.api.hap;
-    const hksv = this.config.hksvRecording === true && hap.MediaContainerType && hap.CameraRecordingConfiguration;
+    // CameraRecordingConfiguration is a TypeScript type, not a runtime export;
+    // gate on the recording enums the options actually use instead.
+    const hksv = this.config.hksvRecording === true &&
+      hap.MediaContainerType && hap.VideoCodecType && hap.AudioRecordingCodecType;
     if (this.config.hksvRecording === true && !hksv)
       this.log.warn('HKSV richiesto ma questa versione di HAP non supporta la registrazione; ignorato');
     let recordingExtras = {};
