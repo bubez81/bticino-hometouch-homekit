@@ -43,7 +43,9 @@ const Characteristic = {Manufacturer: 'm', Model: 'mo', SerialNumber: 's', Name:
   LockCurrentState: {SECURED: 1, UNSECURED: 0}, LockTargetState: 'target', MotionDetected: 'motion',
   ContactSensorState: {CONTACT_DETECTED: 0, CONTACT_NOT_DETECTED: 1}, StatusFault: {NO_FAULT: 0, GENERAL_FAULT: 1}};
 // HKSV recording enums: their presence is how index.js detects HAP support.
-const recordingEnums = {MediaContainerType: {FRAGMENTED_MP4: 0}, CameraRecordingConfiguration: class {},
+// (CameraRecordingConfiguration is a TypeScript type, not a runtime export, so
+// it is deliberately absent here — the gate must not depend on it.)
+const recordingEnums = {MediaContainerType: {FRAGMENTED_MP4: 0},
   VideoCodecType: {H264: 0}, H264Profile: {BASELINE: 0, MAIN: 1, HIGH: 2}, H264Level: {LEVEL3_1: 0, LEVEL3_2: 1, LEVEL4_0: 2},
   AudioRecordingCodecType: {AAC_LC: 0}, AudioRecordingSamplerate: {KHZ_32: 3}, AudioBitrate: {VARIABLE: 0}};
 const platforms = {}, handlers = {}, published = [];
