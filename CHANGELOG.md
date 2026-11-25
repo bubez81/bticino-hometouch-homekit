@@ -7,6 +7,19 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-25
 
+### Fixed (plugin 0.19.2)
+
+- **HomeKit Secure Video clips are now produced at the resolution the hub
+  negotiated, with zero-based timestamps (still experimental, off by default).**
+  A real ring produced a clip (3 fragments, normal close) that never appeared in
+  Apple Home: the recorder encoded at the panel's native 400×288 while the hub
+  had negotiated 1280×720, and Apple silently drops a clip whose real video does
+  not match the configuration it selected. The recorder now scales to exactly the
+  negotiated width×height (aspect-preserved, padded) and zero-bases the panel's
+  timestamps, so each 4-second fragment starts on a keyframe at 0/4/8 s as the
+  hub expects. Verified offline against a captured panel stream. HKSV is still
+  **off by default and pending confirmation that a clip is stored.**
+
 ### Changed (plugin 0.19.1, Home Assistant 0.4.1)
 
 - **HomeKit Secure Video now reads a dedicated, isolated feed (groundwork for the

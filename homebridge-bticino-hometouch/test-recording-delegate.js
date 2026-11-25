@@ -14,6 +14,19 @@ const { RecordingDelegate, recordingOptions, ffmpegArgs, fragments, BoxReader, L
 // for the shared feed and break notifications/live view.
 assert.equal(LIVE_FEED_PORT, 22301, 'recording delegate must read the dedicated HKSV feed, not shared 22300');
 
+// The clip must be delivered at EXACTLY the negotiated resolution with
+// zero-based timestamps, or the home hub silently drops it (its real config
+// would not match the selectedConfiguration it negotiated).
+{
+  const a = ffmpegArgs(
+    { videoCodec: { resolution: [1280, 720, 30], parameters: { profile: 2, level: 2 } },
+      mediaContainerConfiguration: { fragmentLength: 4000 } },
+    'udp://127.0.0.1:22301',
+  ).join(' ');
+  assert.match(a, /scale=1280:720/, 'scales to the negotiated width x height');
+  assert.match(a, /setpts=PTS-STARTPTS/, 'zero-bases the panel timestamps');
+}
+
 // Build an MP4 box: 4-byte big-endian length (incl. 8-byte header) + 4-char type + payload.
 function box(type, payload = Buffer.alloc(0)) {
   const header = Buffer.alloc(8);
