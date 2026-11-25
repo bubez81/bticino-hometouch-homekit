@@ -215,7 +215,18 @@ class RecordingDelegate {
     const maxTimer = setTimeout(() => { this.log.info('HKSV: durata massima clip raggiunta'); controller.abort(); }, this.maxClipMs);
     controller.signal.addEventListener('abort', () => {
       clearTimeout(firstTimer); clearTimeout(maxTimer);
-      if (proc.exitCode === null && proc.signalCode === null) { try { proc.kill('SIGTERM'); } catch (_) { /* ignore */ } }
+      // Once we stop reading ffmpeg's stdout (clip done), it blocks writing the
+      // next fragment; then even SIGTERM cannot complete and the process lingers
+      // for minutes holding the feed UDP port, so the next ring's clip fails with
+      // "bind failed: Address already in use". Drop the pipe to unblock it, then
+      // SIGTERM, then SIGKILL as a guaranteed backstop.
+      try { proc.stdout.destroy(); } catch (_) { /* ignore */ }
+      if (proc.exitCode === null && proc.signalCode === null) {
+        try { proc.kill('SIGTERM'); } catch (_) { /* ignore */ }
+        setTimeout(() => {
+          try { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); } catch (_) { /* ignore */ }
+        }, 2000).unref?.();
+      }
     }, { once: true });
 
     let count = 0;
