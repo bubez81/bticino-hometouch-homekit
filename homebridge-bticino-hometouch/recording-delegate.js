@@ -73,7 +73,7 @@ function recordingOptions(hap) {
 function ffmpegArgs(config, feedUrl) {
   const v = config.videoCodec;
   const res = v.resolution || [1280, 720, 30];
-  const [, height, fps] = res;
+  const [width, height, fps] = res;
   const profile = H264_PROFILE[v.parameters?.profile] || 'main';
   const level = H264_LEVEL[v.parameters?.level] || '4.0';
   const bitrate = Math.max(64, Math.round((v.parameters?.bitRate || 2000)));
@@ -86,7 +86,15 @@ function ffmpegArgs(config, feedUrl) {
     '-f', 'mpegts', '-i', feedUrl,
     '-f', 'lavfi', '-i', `anullsrc=r=${sampleRate}:cl=mono`,
     '-map', '0:v:0', '-map', '1:a:0',
-    '-vf', `fps=${fps},scale=-2:min(ih\\,${height}),format=yuv420p,setsar=1`,
+    // Deliver EXACTLY the negotiated WxH: HomeKit silently drops a clip whose
+    // real resolution differs from the selectedConfiguration it negotiated. The
+    // panel is 400x288, so we must scale up to the negotiated size (fit inside,
+    // keep aspect) and pad to the exact frame, not leave it at the source size.
+    // setpts=PTS-STARTPTS zero-bases the timestamps: the panel's MPEG-TS starts
+    // at a large PTS, which Apple rejects and which also misaligns the forced
+    // keyframes below (they are expressed against output time t). Zero-based, the
+    // fragments start on an IDR at 0/4/8 s as the hub expects.
+    '-vf', `setpts=PTS-STARTPTS,fps=${fps},scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p,setsar=1`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-bf', '0',
     '-profile:v', profile, '-level:v', level,
     '-b:v', `${bitrate}k`, '-maxrate', `${bitrate + 128}k`, '-bufsize', `${2 * bitrate}k`,
