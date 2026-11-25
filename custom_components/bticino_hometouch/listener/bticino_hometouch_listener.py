@@ -2094,10 +2094,18 @@ class HomtouchListener:
             self.maintain_media()
 
             if time.time() >= self.next_refresh:
-                log("Rinnovo registrazione SIP")
-                # Re-REGISTER sul medesimo socket TLS: nessun buco volontario.
-                self.register()
-                log("Rinnovo completato sulla stessa connessione TLS")
+                # Don't re-REGISTER while a doorbell call is in progress: a
+                # renewal can perturb our branch of the gateway's call fork and
+                # make us miss/drop the ring. Defer up to 45 s (doorbell calls
+                # are short; the registration expiry margin is ~90 s), then renew
+                # regardless so a stuck dialog can never cost us the registration.
+                if self.incoming_dialogs and time.time() < self.next_refresh + 45:
+                    pass
+                else:
+                    log("Rinnovo registrazione SIP")
+                    # Re-REGISTER sul medesimo socket TLS: nessun buco volontario.
+                    self.register()
+                    log("Rinnovo completato sulla stessa connessione TLS")
 
             try:
                 raw = self.stream.read_message(

@@ -5,6 +5,17 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-25
+
+### Fixed (plugin 0.18.2, Home Assistant 0.3.16)
+
+- **Don't re-REGISTER the SIP client while a doorbell call is in progress.** The
+  listener renews its SIP registration periodically; doing so during an incoming
+  call could perturb the listener's branch of the gateway's call fork and risk
+  missing or dropping the ring. The renewal is now deferred while an incoming
+  call is active (up to 45 s, well within the ~90 s registration expiry margin),
+  then performed as usual. No change to the call or media handling.
+
 ## 2026-11-21
 
 ### Fixed (plugin 0.18.1)
