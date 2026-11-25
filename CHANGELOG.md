@@ -7,6 +7,24 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-25
 
+### Added (plugin 0.19.0, Home Assistant 0.4.0)
+
+- **Reserve a ringing call from the live view, like answering in the Door Entry
+  app (opt-in: "Answer rings from the live view").** When someone rings, opening
+  the doorbell's live view now attaches to that incoming call instead of placing
+  a separate one, so there is no contention with the entrance panel or the family
+  app. Pressing *Parla* reserves the call with a SIP `200 OK`: the gateway then
+  cancels the other endpoints and nobody else can take or talk over it — the first
+  viewer to press *Parla* owns the call.
+- **Several people can watch the same ring at once.** The entrance panel's video
+  and audio are received once and fanned out to every viewer, so the panel always
+  sees a single consumer no matter how many watch; its bandwidth does not grow
+  with the number of viewers. Only one viewer (the first to press *Parla*) talks.
+- Added the `incoming_status` listener command so the plugin can tell when a ring
+  is pending, and made the panel-audio decoder a single decode shared across
+  viewers. Off by default; enable *"Answer rings from the live view"* in the
+  plugin settings to use it.
+
 ### Fixed (plugin 0.18.2, Home Assistant 0.3.16)
 
 - **Don't re-REGISTER the SIP client while a doorbell call is in progress.** The

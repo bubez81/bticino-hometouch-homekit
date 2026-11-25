@@ -63,6 +63,8 @@ class IncomingAudio:
         self.encoder = self.decoder = self.talk = None
         self.encoded = []
         self.decoder_input = None
+        self.pcm_listeners = []
+        self.pcm_socket = None
         self.directory = None
         self.stop_event = threading.Event()
         self.thread = None
@@ -95,12 +97,24 @@ class IncomingAudio:
         self.thread.start()
 
     def set_listener(self, pcm_port):
-        """Start decoding the panel's audio to raw PCM on a loopback port."""
+        """Register a loopback port to receive the panel's decoded 16-kHz PCM.
+
+        Several viewers can listen at once: the panel audio is decoded a single
+        time to an internal port and fanned out to every registered port, so the
+        entrance panel still sees one consumer no matter how many watch.
+        """
         if type(pcm_port) is not int or not 1024 <= pcm_port <= 65535:
             raise ValueError('Invalid PCM port')
         with self.lock:
+            if pcm_port not in self.pcm_listeners:
+                self.pcm_listeners.append(pcm_port)
             if self.decoder is not None:
                 return
+            relay = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            relay.bind(('127.0.0.1', 0))
+            relay.setblocking(False)
+            self.pcm_socket = relay
+            internal = relay.getsockname()[1]
             first, second = loopback_pair()
             port = first.getsockname()[1]
             first.close(); second.close()
@@ -118,9 +132,15 @@ class IncomingAudio:
                  '-protocol_whitelist', 'file,udp,rtp,srtp,crypto',
                  '-probesize', '32768', '-analyzeduration', '0', '-i', str(sdp),
                  '-map', '0:a:0', '-c:a', 'pcm_s16le', '-ar', '16000', '-ac', '1',
-                 '-f', 's16le', f'udp://127.0.0.1:{pcm_port}?pkt_size=640'],
+                 '-f', 's16le', f'udp://127.0.0.1:{internal}?pkt_size=640'],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.decoder_input = port
+
+    def remove_listener(self, pcm_port):
+        """Stop fanning the panel's PCM to a viewer that has detached."""
+        with self.lock:
+            if pcm_port in self.pcm_listeners:
+                self.pcm_listeners.remove(pcm_port)
 
     def allow_talk(self, allowed):
         self.talk_allowed = bool(allowed)
@@ -174,6 +194,17 @@ class IncomingAudio:
                         self.sockets[offset].sendto(packet, ('127.0.0.1', self.decoder_input + offset))
                     except OSError:
                         pass
+        if self.pcm_socket is not None:
+            while True:
+                try:
+                    data = self.pcm_socket.recv(65535)
+                except (BlockingIOError, OSError):
+                    break
+                for port in list(self.pcm_listeners):
+                    try:
+                        self.pcm_socket.sendto(data, ('127.0.0.1', port))
+                    except OSError:
+                        pass
         self.pump()
         for offset, sock in enumerate(self.encoded):
             while True:
@@ -213,12 +244,13 @@ class IncomingAudio:
                     process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     process.kill(); process.wait()
-        for sock in self.encoded + ([self.talk] if self.talk else []):
+        for sock in self.encoded + ([self.talk] if self.talk else []) + ([self.pcm_socket] if self.pcm_socket else []):
             try:
                 sock.close()
             except OSError:
                 pass
-        self.encoded, self.talk = [], None
+        self.encoded, self.talk, self.pcm_socket = [], None, None
+        self.pcm_listeners = []
         if self.directory:
             for path in self.directory.glob('*'):
                 path.unlink(missing_ok=True)

@@ -100,11 +100,40 @@ class IncomingAudioTests(unittest.TestCase):
         self.assertEqual(sdp.stat().st_mode & 0o777, 0o600)
         self.assertIn('speex/8000', sdp.read_text())
         self.assertNotIn(KEY, ' '.join(command))
-        self.assertIn('udp://127.0.0.1:40100?pkt_size=640', command)
+        # The panel is decoded once to an internal port and fanned out, so the
+        # requested viewer port is a listener, not the decoder's direct output.
+        self.assertEqual(audio.pcm_listeners, [40100])
+        internal = audio.pcm_socket.getsockname()[1]
+        self.assertNotEqual(internal, 40100)
+        self.assertIn(f'udp://127.0.0.1:{internal}?pkt_size=640', command)
         with self.assertRaises(ValueError):
             audio.set_listener(80)
         audio.close()
         self.assertFalse(sdp.exists())
+
+    def test_pcm_fans_out_to_every_listener(self):
+        audio = self.make()
+        receivers = [udp(), udp()]
+        ports = [r.getsockname()[1] for r in receivers]
+        with patch.object(incoming.subprocess, 'Popen', return_value=self.process) as spawn:
+            audio.set_listener(ports[0])
+            audio.set_listener(ports[1])
+        self.assertEqual(spawn.call_count, 1)          # decoded once for all viewers
+        self.assertEqual(audio.pcm_listeners, ports)
+        internal = audio.pcm_socket.getsockname()[1]
+        feed = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        feed.sendto(b'pcm-frame', ('127.0.0.1', internal))
+        time.sleep(0.05)
+        audio.step()
+        time.sleep(0.05)
+        for receiver in receivers:
+            self.assertEqual(receiver.recv(100), b'pcm-frame')
+        audio.remove_listener(ports[0])
+        self.assertEqual(audio.pcm_listeners, [ports[1]])
+        feed.close()
+        for receiver in receivers:
+            receiver.close()
+        audio.close()
 
     def test_rejects_unsupported_codec(self):
         with self.assertRaises(ValueError):

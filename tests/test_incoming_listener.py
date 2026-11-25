@@ -21,6 +21,8 @@ class ListenerTests(unittest.TestCase):
         self.client.send = Mock()
         self.client.respond_basic = Mock()
         self.capture = Mock(answer_sdp='test-sdp')
+        self.capture.attachments = []
+        self.capture.reserved_by = None
         self.client.media = {'test': self.capture}
         self.client.dialog_tags = {'test': 'local'}
         self.dialog = IncomingDialog(INVITE, '<sip:local@192.0.2.2>', self.client.send, 'local')
@@ -69,23 +71,55 @@ class ListenerTests(unittest.TestCase):
         self.capture.stop.assert_called_once_with('timeout')
 
     def test_explicit_answer_muted_preserves_microphone_gate(self):
-        self.capture.attachment = Mock(owner='home', allowed=True)
+        attachment = Mock(owner='home', allowed=True)
+        self.capture.attachments = [attachment]
         with patch.object(self.client, 'publish_incoming_state'):
             result = self.client.handle_call_command(dict(command='answer_incoming', session_id='home', enabled=False, answer=True))
         self.assertTrue(result['ok'])
         self.assertEqual(self.dialog.state, 'answered')
-        self.assertFalse(self.capture.attachment.allowed)
+        self.assertFalse(attachment.allowed)
         self.assertEqual(self.dialog.owner, 'home')
+        self.assertEqual(self.capture.reserved_by, 'home')
 
     def test_mute_alone_does_not_answer(self):
-        self.capture.attachment = Mock(owner='home', allowed=True)
+        self.capture.attachments = [Mock(owner='home', allowed=True)]
         result = self.client.handle_call_command(dict(command='answer_incoming', session_id='home', enabled=False))
         self.assertTrue(result['ok'])
         self.assertEqual(self.dialog.state, 'ringing')
+        self.assertIsNone(self.capture.reserved_by)
         self.client.send.assert_not_called()
 
     def test_wrong_session_cannot_answer(self):
-        self.capture.attachment = Mock(owner='home', allowed=False)
+        self.capture.attachments = [Mock(owner='home', allowed=False)]
         result = self.client.handle_call_command(dict(command='answer_incoming', session_id='wrong', enabled=False, answer=True))
         self.assertEqual(result['error'], 'session_mismatch')
         self.client.send.assert_not_called()
+
+    def test_incoming_status_reports_pending_ring(self):
+        self.capture.two_way_enabled = True
+        self.capture.audio = {'can_talk': True}
+        result = self.client.handle_call_command(dict(command='incoming_status', session_id='home'))
+        self.assertTrue(result['incoming'])
+        self.client.incoming_dialogs = {}
+        self.assertFalse(self.client.handle_call_command(dict(command='incoming_status', session_id='home'))['incoming'])
+
+    def test_second_viewer_cannot_steal_the_call(self):
+        self.capture.attachments = [Mock(owner='home', allowed=False), Mock(owner='ipad', allowed=False)]
+        with patch.object(self.client, 'publish_incoming_state'):
+            first = self.client.handle_call_command(dict(command='answer_incoming', session_id='home', enabled=True))
+            second = self.client.handle_call_command(dict(command='answer_incoming', session_id='ipad', enabled=True))
+        self.assertTrue(first['ok'])
+        self.assertEqual(self.capture.reserved_by, 'home')
+        self.assertEqual(second['error'], 'incoming_call_owned')
+
+    def test_viewer_release_keeps_call_for_reserver(self):
+        reserver = Mock(owner='home', allowed=True, pcm_port=40100)
+        viewer = Mock(owner='ipad', allowed=False, pcm_port=40200)
+        self.capture.attachments = [reserver, viewer]
+        self.capture.reserved_by = 'home'
+        self.dialog.answer('home', 'sdp', audio_ready=True)
+        result = self.client.handle_call_command(dict(command='release_incoming', session_id='ipad'))
+        self.assertTrue(result['ok'])
+        self.assertEqual([a.owner for a in self.capture.attachments], ['home'])
+        self.assertEqual(self.capture.reserved_by, 'home')
+        self.capture.incoming_audio.remove_listener.assert_called_once_with(40200)

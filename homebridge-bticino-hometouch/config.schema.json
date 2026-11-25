@@ -38,6 +38,12 @@
         "type": "boolean",
         "default": true
       },
+      "enableTwoWayAudio": {
+        "title": "Answer rings from the live view (reserve the call)",
+        "type": "boolean",
+        "default": false,
+        "description": "When someone rings, opening the doorbell's live view attaches to that call instead of starting a separate one. Pressing 'Parla' then reserves the call (like answering in the Door Entry app): the entrance panel and the family app stop ringing and nobody else can take it. Several people can watch the ring at the same time; only the first to press 'Parla' talks. Needs the entrance panel's two-way audio."
+      },
       "secondCamera": {
         "title": "Second camera of the entrance panel (when the system has one)",
         "type": "boolean",
@@ -144,6 +150,7 @@
       ]
     },
     "liveAudio",
+    "enableTwoWayAudio",
     "secondCamera",
     "secondCameraName",
     "connectionSensor",
