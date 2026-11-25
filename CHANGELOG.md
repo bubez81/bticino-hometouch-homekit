@@ -7,6 +7,18 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-25
 
+### Changed (plugin 0.19.1, Home Assistant 0.4.1)
+
+- **HomeKit Secure Video now reads a dedicated, isolated feed (groundwork for the
+  HKSV redesign; still experimental and off by default).** The ring's decrypted
+  H.264 is tee'd to a private loopback port used only by the recording delegate,
+  separate from the shared live/snapshot/Home Assistant feed. The first HKSV
+  attempt read the shared port, where a stuck recorder ffmpeg contended for the
+  feed and took down ring notifications and the live view; on its own port it
+  cannot. Measured the panel stream to confirm the approach: H.264 Constrained
+  Baseline, 400×288, with an IDR about every second — suitable for the recorder.
+  HKSV remains **off by default and unvalidated**; do not enable it yet.
+
 ### Added (plugin 0.19.0, Home Assistant 0.4.0)
 
 - **Reserve a ringing call from the live view, like answering in the Door Entry

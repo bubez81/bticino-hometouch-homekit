@@ -7,7 +7,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { Readable } = require('node:stream');
-const { RecordingDelegate, recordingOptions, ffmpegArgs, fragments, BoxReader } = require('./recording-delegate');
+const { RecordingDelegate, recordingOptions, ffmpegArgs, fragments, BoxReader, LIVE_FEED_PORT } = require('./recording-delegate');
+
+// HKSV reads a DEDICATED loopback feed (the listener's HKSV_FEED_PORT = 22301),
+// never the shared 22300 live/snapshot feed, so a stuck recorder cannot contend
+// for the shared feed and break notifications/live view.
+assert.equal(LIVE_FEED_PORT, 22301, 'recording delegate must read the dedicated HKSV feed, not shared 22300');
 
 // Build an MP4 box: 4-byte big-endian length (incl. 8-byte header) + 4-char type + payload.
 function box(type, payload = Buffer.alloc(0)) {
