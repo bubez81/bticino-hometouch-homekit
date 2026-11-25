@@ -61,6 +61,7 @@ class MediaAttachment:
         self.sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.returns = []
         self.allowed = False
+        self.pcm_port = None
         try:
             for _ in range(20):
                 first = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

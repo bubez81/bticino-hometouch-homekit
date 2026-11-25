@@ -999,7 +999,8 @@ class EarlyMediaCapture:
         self.remote_rtcp_port = remote_rtcp_port
         self.audio_key = base64.b64encode(os.urandom(30)).decode("ascii")
         self.audio_sockets = []
-        self.attachment = None
+        self.attachments = []
+        self.reserved_by = None
         self.incoming_audio = None
         self.two_way_enabled = CONFIG.get('incoming_audio') is True or os.environ.get('BTICINO_INCOMING_AUDIO') == '1'
         self.audio_packets = 0
@@ -1154,8 +1155,7 @@ class EarlyMediaCapture:
         set_snapshot_pending(self.call_id, True)
 
     def forward_audio(self, offset, packet):
-        attachment = self.attachment
-        if attachment:
+        for attachment in self.attachments:
             attachment.forward('audio', offset, packet)
 
     def poll(self):
@@ -1164,12 +1164,14 @@ class EarlyMediaCapture:
                 try:
                     packet, peer = sock.recvfrom(65535)
                     self.audio_packets += 1
-                    if self.attachment and peer[0] == self.audio['address']:
-                        self.attachment.forward('audio', self.audio_sockets.index(sock), packet)
+                    if self.attachments and peer[0] == self.audio['address']:
+                        offset = self.audio_sockets.index(sock)
+                        for attachment in self.attachments:
+                            attachment.forward('audio', offset, packet)
                 except BlockingIOError:
                     break
-        if self.attachment:
-            self.attachment.poll_return()
+        for attachment in self.attachments:
+            attachment.poll_return()
         if (not self.classification_reported
                 and self.classification_path.exists()
                 and self.classification_path.stat().st_size > 0):
@@ -1269,8 +1271,10 @@ class EarlyMediaCapture:
                         self.send_pli(ssrc)
                 try:
                     self.relay_sender.sendto(packet, destinations[sock])
-                    if self.attachment:
-                        self.attachment.forward('video', self.relay_sockets.index(sock), packet)
+                    if self.attachments:
+                        offset = self.relay_sockets.index(sock)
+                        for attachment in self.attachments:
+                            attachment.forward('video', offset, packet)
                 except OSError:
                     pass
 
@@ -1319,9 +1323,10 @@ class EarlyMediaCapture:
             log(f"Audio chiamata: ricevuti={self.incoming_audio.panel_packets} voce={self.incoming_audio.talk_bytes} byte")
             self.incoming_audio.close()
             self.incoming_audio = None
-        if self.attachment:
-            self.attachment.close()
-            self.attachment = None
+        for attachment in self.attachments:
+            attachment.close()
+        self.attachments = []
+        self.reserved_by = None
         for sock in self.audio_sockets:
             try:
                 sock.close()
@@ -1385,6 +1390,14 @@ class HomtouchListener:
             return result
         if command == 'ringer_status':
             return RINGER.status()
+        if command == 'incoming_status':
+            incoming = False
+            if len(self.incoming_dialogs) == 1:
+                call_id = next(iter(self.incoming_dialogs))
+                capture = self.media.get(call_id)
+                incoming = bool(capture and capture.two_way_enabled
+                                and capture.audio and capture.audio.get('can_talk'))
+            return {'ok': True, 'incoming': incoming}
         if command == 'attach_incoming':
             if len(self.incoming_dialogs) != 1:
                 return {'ok': False, 'error': 'no_unique_incoming_call'}
@@ -1392,49 +1405,60 @@ class HomtouchListener:
             capture = self.media[call_id]
             if not capture.two_way_enabled or not capture.audio or not capture.audio.get('can_talk'):
                 return {'ok': False, 'error': 'incoming_audio_not_negotiated'}
-            if capture.attachment:
-                return {'ok': False, 'error': 'incoming_call_owned'}
-            capture.attachment = MediaAttachment(capture, owner, request.get('video_port'), request.get('audio_port'))
-            result = capture.attachment.description()
+            if any(a.owner == owner for a in capture.attachments):
+                return {'ok': False, 'error': 'already_attached'}
+            attachment = MediaAttachment(capture, owner, request.get('video_port'), request.get('audio_port'))
+            result = attachment.description()
             if capture.incoming_audio and request.get('pcm_port') is not None:
                 try:
                     capture.incoming_audio.set_listener(request.get('pcm_port'))
+                    attachment.pcm_port = request.get('pcm_port')
                     result['pcm'] = True
                 except ValueError:
-                    capture.attachment.close()
-                    capture.attachment = None
+                    attachment.close()
                     return {'ok': False, 'error': 'invalid_pcm_port'}
+            # Viewing fans the panel out to every subscriber; nobody is reserved
+            # until a viewer talks, so several people can watch at the same time.
+            capture.attachments.append(attachment)
             result['talk'] = capture.incoming_audio is not None
             return result
         for call_id, capture in list(self.media.items()):
-            attachment = capture.attachment
-            if not attachment or attachment.owner != owner:
+            attachment = next((a for a in capture.attachments if a.owner == owner), None)
+            if attachment is None:
                 continue
             dialog = self.incoming_dialogs[call_id]
             if command == 'answer_incoming':
-                if type(request.get('enabled')) is not bool:
+                enabled = request.get('enabled')
+                if type(enabled) is not bool:
                     return {'ok': False, 'error': 'invalid_talk_state'}
-                if capture.incoming_audio:
-                    capture.incoming_audio.allow_talk(request['enabled'])
-                if not request['enabled']:
-                    attachment.allowed = False
-                    if request.get('answer') is True:
+                # The first viewer to talk reserves the call with 200 OK: the
+                # gateway then cancels the panel and the family app, and no other
+                # viewer can talk or steal it.
+                if enabled or request.get('answer') is True:
+                    if capture.reserved_by not in (None, owner):
+                        return {'ok': False, 'error': 'incoming_call_owned'}
+                    if capture.reserved_by is None:
+                        capture.reserved_by = owner
                         dialog.answer(owner, capture.answer_sdp, audio_ready=True)
                         self.publish_incoming_state()
-                    return {'ok': True}
-                # This command is sent only after the plugin's audio decoders
-                # have been prepared and the HomeKit speaker is unmuted.
-                dialog.answer(owner, capture.answer_sdp, audio_ready=True)
-                attachment.allowed = True
-                self.publish_incoming_state()
+                reserved = capture.reserved_by == owner
+                if capture.incoming_audio and reserved:
+                    capture.incoming_audio.allow_talk(enabled)
+                attachment.allowed = enabled and reserved
                 return {'ok': True}
             if command == 'release_incoming':
-                if capture.incoming_audio:
-                    capture.incoming_audio.allow_talk(False)
-                if dialog.state in ('answered', 'established'):
-                    dialog.hangup(owner)
+                if capture.incoming_audio and attachment.pcm_port is not None:
+                    capture.incoming_audio.remove_listener(attachment.pcm_port)
+                if capture.reserved_by == owner:
+                    if capture.incoming_audio:
+                        capture.incoming_audio.allow_talk(False)
+                    if dialog.state in ('answered', 'established'):
+                        dialog.hangup(owner)
+                    capture.reserved_by = None
+                attachment.allowed = False
                 attachment.close()
-                capture.attachment = None
+                if attachment in capture.attachments:
+                    capture.attachments.remove(attachment)
                 return {'ok': True}
         return {'ok': False, 'error': 'session_mismatch'}
 

@@ -201,10 +201,14 @@ class StreamManager {
       if (!result.ok) throw Error(result.error||'SIP start failed');
       if(s.state==='stopping')return;
       s.state='streaming';
-      if(s.incoming) {
-        // Opening a live incoming call accepts SIP, but never opens the microphone.
-        await s.incoming.answerMuted();
-        if(this.talkEnabled===true)await s.incoming.talk(true);
+      if(s.incoming && this.talkEnabled===true) {
+        // Opening the view only watches the ring (several people can watch at
+        // once); pressing Talk reserves the call with 200 OK and opens the
+        // microphone. If Talk is already on as the view starts, reserve now —
+        // but if another viewer already answered, keep viewing muted instead of
+        // failing the stream.
+        try { await s.incoming.talk(true); }
+        catch(e) { this.log.info(`BTicino incoming call: viewing only (${e.message})`); }
       }
       if (!diagnostic && !s.incoming) {
         // The gateway can end its SIP dialog while HomeKit is still viewing.
@@ -262,7 +266,12 @@ class StreamManager {
   }
   async setTalkEnabled(enabled) {
     this.talkEnabled=enabled;
-    for(const s of this.sessions.values())if(s.incoming)await s.incoming.talk(enabled);
+    for(const s of this.sessions.values())if(s.incoming){
+      // A second viewer pressing Talk is refused (the first answerer owns the
+      // call); keep that viewer watching instead of throwing.
+      try { await s.incoming.talk(enabled); }
+      catch(e) { this.log.info(`BTicino incoming call talk: ${e.message}`); }
+    }
   }
   async stop(id) {
     const s=this.sessions.get(id);
