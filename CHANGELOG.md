@@ -7,6 +7,16 @@ Home Assistant integration is installed from this repository through HACS.
 
 ## 2026-11-25
 
+### Fixed (plugin 0.19.3)
+
+- **The HKSV recorder no longer leaks its ffmpeg, which blocked every ring after
+  the first.** Once a clip finished the recorder stopped reading ffmpeg's stdout;
+  ffmpeg then blocked writing the next fragment, SIGTERM could not complete, and
+  the process lingered for minutes holding the feed UDP port — so the next ring's
+  clip failed with "bind failed: Address already in use" and recorded nothing. On
+  stop the recorder now drops the stdout pipe to unblock ffmpeg and force-kills it
+  (SIGKILL) as a backstop, so each ring records independently.
+
 ### Fixed (plugin 0.19.2)
 
 - **HomeKit Secure Video clips are now produced at the resolution the hub
