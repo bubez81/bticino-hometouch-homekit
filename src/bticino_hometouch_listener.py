@@ -158,6 +158,12 @@ INTERNAL_MEDIA_PORT_START = 22202
 INTERNAL_MEDIA_PORT_END = 22213
 LIVE_VIDEO_HOST = "127.0.0.1"
 LIVE_VIDEO_PORT = 22300
+# A dedicated, HKSV-only copy of the ring's decrypted H.264. Separate from
+# LIVE_VIDEO_PORT (which is shared with the post-call snapshot fallback and the
+# Home Assistant go2rtc feed): the recording delegate reads THIS port alone, so
+# a stuck/looping recorder ffmpeg can never contend for the shared feed and take
+# down notifications or the live view, as the first HKSV attempt did.
+HKSV_FEED_PORT = LIVE_VIDEO_PORT + 1
 SNAPSHOT_HTTP_HOST = "127.0.0.1"
 SNAPSHOT_HTTP_PORT = 8766
 PLACEHOLDER_SNAPSHOT = RUNTIME_DIR / "snapshot-pending.jpg"
@@ -1130,6 +1136,14 @@ class EarlyMediaCapture:
             "-mpegts_flags", "+resend_headers",
             "-f", "mpegts",
             f"udp://{LIVE_VIDEO_HOST}:{LIVE_VIDEO_PORT}?pkt_size=1316",
+            # Dedicated HKSV-only copy of the same decrypted ring H.264 (panel is
+            # Constrained Baseline, IDR every ~1s — ideal for the recorder). On a
+            # private loopback port nobody else uses, so recording stays isolated.
+            "-map", "0:v:0",
+            "-c:v", "copy",
+            "-mpegts_flags", "+resend_headers",
+            "-f", "mpegts",
+            f"udp://{LIVE_VIDEO_HOST}:{HKSV_FEED_PORT}?pkt_size=1316",
             "-map", "0:v:0",
             # Il primo IDR può essere incompleto: scarta l'avvio e salva
             # un frame successivo, quando il decoder si è stabilizzato.

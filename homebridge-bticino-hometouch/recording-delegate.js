@@ -1,13 +1,14 @@
 'use strict';
 // HomeKit Secure Video (HKSV) recording for the BTicino HOMETOUCH doorbell.
 //
-// When someone rings, the listener already decrypts the gateway's H.264 and tees
-// it, continuously, as MPEG-TS to udp://127.0.0.1:LIVE_FEED_PORT (see the Python
-// listener: the same feed drives the snapshot and the Home Assistant live view).
-// On cubetto nothing else reads that port — the plugin's own live view uses a
-// separate on-demand call — so recording can read it passively: no second call
-// to the gateway, no contention with the single call slot, and it works even
-// while HomeKit is viewing live.
+// When someone rings, the listener decrypts the gateway's H.264 and tees it as
+// MPEG-TS to a DEDICATED, HKSV-only loopback port (LIVE_FEED_PORT below, = the
+// listener's HKSV_FEED_PORT). This is a separate feed from the shared snapshot /
+// Home Assistant port: reading a port nobody else writes or binds means a stuck
+// recorder ffmpeg can never contend for the shared feed and take down
+// notifications or the live view — the failure mode of the first HKSV attempt,
+// which read the shared port. No second call to the gateway, no contention with
+// the single call slot, and it works even while HomeKit is viewing live.
 //
 // HKSV cannot be triggered by the doorbell button itself (an Apple limitation,
 // HAP-NodeJS #976): the clip is driven by a MotionSensor the plugin trips on the
@@ -21,7 +22,9 @@
 const { spawn } = require('node:child_process');
 
 const LIVE_FEED_HOST = '127.0.0.1';
-const LIVE_FEED_PORT = 22300;
+// The listener's HKSV_FEED_PORT (LIVE_VIDEO_PORT + 1): a private, HKSV-only copy
+// of the ring video, NOT the shared 22300 feed.
+const LIVE_FEED_PORT = 22301;
 // If no video reaches us this soon after the hub asks, there is nothing to
 // record (the ring already ended, or the hub asked on a stale motion event).
 const FIRST_FRAGMENT_TIMEOUT_MS = 8000;
