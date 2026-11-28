@@ -18,6 +18,7 @@ class ListenerTests(unittest.TestCase):
         log_patch.start()
         self.addCleanup(log_patch.stop)
         self.client = listener.HomtouchListener.__new__(listener.HomtouchListener)
+        self.client._last_incoming_state = False
         self.client.send = Mock()
         self.client.respond_basic = Mock()
         self.capture = Mock(answer_sdp='test-sdp')

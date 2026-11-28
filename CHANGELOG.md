@@ -5,6 +5,18 @@ describe implemented behavior separately from physical validation. The
 Homebridge plugin is published on npm (`homebridge-bticino-hometouch`); the
 Home Assistant integration is installed from this repository through HACS.
 
+## 2026-11-28
+
+### Changed (plugin 0.19.4, Home Assistant 0.4.2)
+
+- **Publish the incoming-call state only when it changes.** The listener's main
+  loop republished the ringing/idle state on every tick (dozens of times a
+  second), each time taking a lock and copying a dict for no effect. It now
+  pushes only on a real transition. This is internal; "reserve the call from the
+  live view" (opt-in, on the Homebridge side) is confirmed working on a real
+  ring — opening the doorbell's live view while it is ringing attaches to that
+  call instead of placing a separate one.
+
 ## 2026-11-25
 
 ### Fixed (plugin 0.19.3)

@@ -1378,6 +1378,7 @@ class HomtouchListener:
         self.media = {}
         self.dialog_tags = {}
         self.incoming_dialogs = {}
+        self._last_incoming_state = False
         self.call_commands = CallCommands(self.handle_call_command)
 
     def handle_call_command(self, request):
@@ -1925,12 +1926,19 @@ class HomtouchListener:
         return MEDIA_TIMEOUT + 5
 
     def publish_incoming_state(self):
-        if IPC_MODULE is not None:
-            dialog = next(iter(self.incoming_dialogs.values()), None)
-            IPC_MODULE.set_incoming_state(
-                {"state": dialog.state, "audio_ready": False,
-                 "two_way_available": self.media[dialog.call_id].two_way_enabled} if dialog else None
-            )
+        if IPC_MODULE is None:
+            return
+        dialog = next(iter(self.incoming_dialogs.values()), None)
+        state = ({"state": dialog.state, "audio_ready": False,
+                  "two_way_available": self.media[dialog.call_id].two_way_enabled}
+                 if dialog else None)
+        # Publish only when the state actually changes: the main loop calls this
+        # every tick, and re-pushing the same state dozens of times a second is
+        # wasted work (lock + dict copy) with no effect on the plugin or HA.
+        if state == self._last_incoming_state:
+            return
+        self._last_incoming_state = state
+        IPC_MODULE.set_incoming_state(state)
 
 
     def stop_media_for(self, raw, reason):
